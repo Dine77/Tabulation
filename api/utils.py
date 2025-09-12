@@ -217,11 +217,15 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
         else:
             add_type = "categorical"
 
-    # 🔹 order codes depending on type
+    # --- scale detection ---
+    scale_codes = sorted(value_labels.keys())   # ascending (important for 0–10)
+    scale_length = len(scale_codes)
+
     if add_type == "rating":
-        ordered_codes = sorted(value_labels.keys(), reverse=True)  # 5→1
-    else:  # ranking or categorical
-        ordered_codes = sorted(value_labels.keys())  # 1→10
+        # ordered_codes = list(reversed(scale_codes))  # show high→low
+        ordered_codes = scale_codes  # show low→high
+    else:  # ranking/categorical
+        ordered_codes = scale_codes  # keep ascending
 
     rows = []
 
@@ -232,13 +236,15 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
         total_row["cells"].append({"count": base, "pct": "100%"})
     rows.append(total_row)
 
-    # --- Bottom2 (only for rating) ---
     if add_type == "rating":
-        bottom_row = {"label": "Bottom 2", "cells": []}
+        # --- dynamic bottomN ---
+        bottom_n = 2 if scale_length <= 5 else 3
+        bottom_codes = scale_codes[:bottom_n]   # lowest N
+        bottom_row = {"label": f"Bottom {bottom_n}", "cells": []}
         for var_name, _ in attributes:
             counts = attr_data[var_name]["counts"]
             base = attr_data[var_name]["base"]
-            count = int(counts.get(1, 0)) + int(counts.get(2, 0))
+            count = sum(int(counts.get(c, 0)) for c in bottom_codes)
             pct = f"{round((count/base)*100,1)}%" if base > 0 else "0%"
             bottom_row["cells"].append({"count": count, "pct": pct})
         rows.append(bottom_row)
@@ -255,17 +261,20 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
         label = format_code_label(code, value_labels)
         rows.append({"label": label, "cells": row_cells})
 
-    # --- Top2 + stats (only for rating) ---
     if add_type == "rating":
-        top_row = {"label": "Top 2", "cells": []}
+        # --- dynamic topN ---
+        top_n = 2 if scale_length <= 5 else 3
+        top_codes = scale_codes[-top_n:]   # highest N
+        top_row = {"label": f"Top {top_n}", "cells": []}
         for var_name, _ in attributes:
             counts = attr_data[var_name]["counts"]
             base = attr_data[var_name]["base"]
-            count = int(counts.get(4, 0)) + int(counts.get(5, 0))
+            count = sum(int(counts.get(c, 0)) for c in top_codes)
             pct = f"{round((count/base)*100,1)}%" if base > 0 else "0%"
             top_row["cells"].append({"count": count, "pct": pct})
         rows.append(top_row)
 
+        # --- Mean, Median, StdDev ---
         mean_row, median_row, std_row = (
             {"label": "Mean", "cells": []},
             {"label": "Median", "cells": []},
