@@ -210,21 +210,29 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
     first_var = meta_rows.iloc[0]["Var_Name"]
     value_labels = meta.variable_value_labels.get(first_var, {})
 
+    # Auto-detect type if missing
     if not add_type:
         if all(str(k).isdigit() for k in value_labels.keys()):
             add_type = "rating"
         else:
             add_type = "categorical"
 
-    ordered_codes = sorted(value_labels.keys(), reverse=True)
+    # 🔹 order codes depending on type
+    if add_type == "rating":
+        ordered_codes = sorted(value_labels.keys(), reverse=True)  # 5→1
+    else:  # ranking or categorical
+        ordered_codes = sorted(value_labels.keys())  # 1→10
+
     rows = []
 
+    # --- Total row ---
     total_row = {"label": "Total", "cells": []}
     for var_name, _ in attributes:
         base = attr_data[var_name]["base"]
         total_row["cells"].append({"count": base, "pct": "100%"})
     rows.append(total_row)
 
+    # --- Bottom2 (only for rating) ---
     if add_type == "rating":
         bottom_row = {"label": "Bottom 2", "cells": []}
         for var_name, _ in attributes:
@@ -235,6 +243,7 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
             bottom_row["cells"].append({"count": count, "pct": pct})
         rows.append(bottom_row)
 
+    # --- Scale rows ---
     for code in ordered_codes:
         row_cells = []
         for var_name, _ in attributes:
@@ -246,6 +255,7 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
         label = format_code_label(code, value_labels)
         rows.append({"label": label, "cells": row_cells})
 
+    # --- Top2 + stats (only for rating) ---
     if add_type == "rating":
         top_row = {"label": "Top 2", "cells": []}
         for var_name, _ in attributes:
@@ -256,7 +266,11 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
             top_row["cells"].append({"count": count, "pct": pct})
         rows.append(top_row)
 
-        mean_row, median_row, std_row = {"label": "Mean", "cells": []}, {"label": "Median", "cells": []}, {"label": "StdDev", "cells": []}
+        mean_row, median_row, std_row = (
+            {"label": "Mean", "cells": []},
+            {"label": "Median", "cells": []},
+            {"label": "StdDev", "cells": []},
+        )
         for var_name, _ in attributes:
             series = attr_data[var_name]["series"]
             if len(series) > 0:
@@ -269,7 +283,7 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
                 std_row["cells"].append({"count": 0})
         rows.extend([mean_row, median_row, std_row])
 
-    # ✅ merge "Others" in SRG rows
+    # ✅ merge "Others" like in SC/MR
     rows = merge_others(rows, total_base, is_cells=True)
 
     return {
