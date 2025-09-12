@@ -218,11 +218,10 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
             add_type = "categorical"
 
     # --- scale detection ---
-    scale_codes = sorted(value_labels.keys())   # ascending (important for 0–10)
+    scale_codes = sorted(value_labels.keys())
     scale_length = len(scale_codes)
 
     if add_type == "rating":
-        # ordered_codes = list(reversed(scale_codes))  # show high→low
         ordered_codes = scale_codes  # show low→high
     else:  # ranking/categorical
         ordered_codes = scale_codes  # keep ascending
@@ -239,7 +238,7 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
     if add_type == "rating":
         # --- dynamic bottomN ---
         bottom_n = 2 if scale_length <= 5 else 3
-        bottom_codes = scale_codes[:bottom_n]   # lowest N
+        bottom_codes = scale_codes[:bottom_n]
         bottom_row = {"label": f"Bottom {bottom_n}", "cells": []}
         for var_name, _ in attributes:
             counts = attr_data[var_name]["counts"]
@@ -264,7 +263,7 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
     if add_type == "rating":
         # --- dynamic topN ---
         top_n = 2 if scale_length <= 5 else 3
-        top_codes = scale_codes[-top_n:]   # highest N
+        top_codes = scale_codes[-top_n:]
         top_row = {"label": f"Top {top_n}", "cells": []}
         for var_name, _ in attributes:
             counts = attr_data[var_name]["counts"]
@@ -292,14 +291,58 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
                 std_row["cells"].append({"count": 0})
         rows.extend([mean_row, median_row, std_row])
 
-    # ✅ merge "Others" like in SC/MR
+    # ✅ merge "Others"
     rows = merge_others(rows, total_base, is_cells=True)
 
-    return {
-        "Total": {
+    # --- build output ---
+    result = {
+        "Matrix": {
             "base": total_base,
             "columns": [label for _, label in attributes],
             "rows": rows,
-            "type": add_type
+            "type": add_type,
         }
     }
+
+    # --- add summaries only for rating ---
+    if add_type == "rating":
+        middle_code = scale_codes[len(scale_codes)//2] if len(scale_codes) % 2 == 1 else None
+
+        def build_summary(label, codes):
+            row = {"label": label, "cells": []}
+            for var_name, _ in attributes:
+                counts = attr_data[var_name]["counts"]
+                base = attr_data[var_name]["base"]
+                count = sum(int(counts.get(c, 0)) for c in codes)
+                pct = f"{round((count/base)*100,1)}%" if base > 0 else "0%"
+                row["cells"].append({"count": count, "pct": pct})
+            return {
+                "base": total_base,
+                "columns": [label for _, label in attributes],
+                "rows": [row]
+            }
+
+        # Top / Top2
+        result["TopSummary"] = build_summary("Top", [scale_codes[-1]])
+        result["Top2Summary"] = build_summary("Top 2", scale_codes[-2:])
+
+        # Bottom / Bottom2
+        result["BottomSummary"] = build_summary("Bottom", [scale_codes[0]])
+        result["Bottom2Summary"] = build_summary("Bottom 2", scale_codes[:2])
+
+        # Middle (only for odd scale length like 5, 7, 11...)
+        if middle_code is not None:
+            result["MiddleSummary"] = build_summary("Middle", [middle_code])
+
+        # Mean summary
+        mean_row = {"label": "Mean", "cells": []}
+        for var_name, _ in attributes:
+            series = attr_data[var_name]["series"]
+            mean_row["cells"].append({"count": round(series.mean(), 2) if len(series) > 0 else 0})
+        result["MeanSummary"] = {
+            "base": total_base,
+            "columns": [label for _, label in attributes],
+            "rows": [mean_row]
+        }
+
+    return result
