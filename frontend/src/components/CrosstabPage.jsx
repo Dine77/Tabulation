@@ -79,6 +79,7 @@ function CrosstabPage() {
 
   // -------- Sorting helpers ----------
   const handleSort = (tableKey, colIndex) => {
+    console.log("Sorting", tableKey, colIndex);
     setSortConfigs((prev) => {
       const prevCfg = prev[tableKey] || { colIndex: null, direction: "none" };
       if (prevCfg.colIndex === colIndex) {
@@ -128,133 +129,133 @@ function CrosstabPage() {
     return [...fixedTop, ...sortable, ...fixedBottom];
   };
 
-  const renderNPSCard1 = (npsObj, question) => {
-    console.log("NPS Object:", npsObj);
 
+  const renderNPSCard = (npsObj, question, tableKey) => {
     if (!npsObj) return null;
+    const cols = ["Qualified"];
+
     const status =
       npsObj.score >= 50 ? "Excellent"
         : npsObj.score >= 0 ? "Good"
           : "Needs Improvement";
 
-    return (
-      <div className="bg-white border rounded-lg shadow p-6 mb-6">
-        <div className="flex justify-between items-center mb-4">
-          <div className="text-green-700 font-semibold">{question}</div>
-          <button className="text-sm text-blue-600 hover:underline">Export</button>
-        </div>
+    const u_color =
+      npsObj.score >= 50 ? "text-[#FF5578]"
+        : npsObj.score >= 0 ? "text-[#F39A63]"
+          : "text-[#1BD56F]";
 
-        <div className="text-5xl font-extrabold text-center">{npsObj.score}</div>
-        <div className="text-center mb-4">Your Net Promoter Score is {status}</div>
-
-        {/* Gauge */}
-        <div className="relative h-4 w-full bg-gradient-to-r from-red-500 via-yellow-400 to-green-500 rounded">
-          <div
-            className="absolute top-[-6px] w-1 h-6 bg-black"
-            style={{ left: `${(npsObj.score + 100) / 200 * 100}%` }}
-          />
-        </div>
-
-        {/* Stats table */}
-        <table className="min-w-full border-collapse text-sm mt-6">
-          <tbody>
-            <tr><td className="font-bold">Total</td><td>{npsObj.base}</td></tr>
-            <tr><td className="font-bold">NPS Score</td><td>{npsObj.score}</td></tr>
-            <tr><td>Promoter (9–10)</td><td>{npsObj.promoter.pct} ({npsObj.promoter.count})</td></tr>
-            <tr><td>Passive (7–8)</td><td>{npsObj.passive.pct} ({npsObj.passive.count})</td></tr>
-            <tr><td>Detractor (0–6)</td><td>{npsObj.detractor.pct} ({npsObj.detractor.count})</td></tr>
-            <tr><td>Mean</td><td>{npsObj.mean}</td></tr>
-            <tr><td>Median</td><td>{npsObj.median}</td></tr>
-            <tr><td>Std Dev</td><td>{npsObj.stddev}</td></tr>
-          </tbody>
-        </table>
-      </div>
-    );
-  };
-
-
-
-  const renderNPSCard = (npsObj, question) => {
-    if (!npsObj) return null;
-
-    const status =
-      npsObj.score >= 50 ? "Excellent"
-        : npsObj.score >= 0 ? "Good"
-          : "Needs Improvement";
-    const u_color = npsObj.score >= 50 ? "text-[#FF5578]" : npsObj.score >= 0 ? "text-[#F39A63]" : "text-[#1BD56F]";
-
-    // convert score (-100 → 100) into percentage for bar marker
     const markerLeft = ((npsObj.score + 100) / 200) * 100;
 
+    // Split rows into fixed + sortable
+    const fixedTop = [{ label: "Total", count: npsObj.base }];
+    const fixedBottom = [
+      { label: "Mean", count: npsObj.mean },
+      { label: "Median", count: npsObj.median },
+      { label: "Std Dev", count: npsObj.stddev }
+    ];
+    let sortable = [
+      { label: "NPS Score", count: Math.round(npsObj.score) },
+      { label: "Promoter (9–10)", count: npsObj.promoter.count, pct: npsObj.promoter.pct },
+      { label: "Passive (7–8)", count: npsObj.passive.count, pct: npsObj.passive.pct },
+      { label: "Detractor (0–6)", count: npsObj.detractor.count, pct: npsObj.detractor.pct }
+    ];
+
+    // Apply sorting only to sortable rows
+    const cfg = sortConfigs[tableKey] || { colIndex: null, direction: "none" };
+    if (cfg.colIndex !== null && cfg.direction !== "none") {
+      sortable = sortable.sort((a, b) => {
+        const aVal = a.count || 0;
+        const bVal = b.count || 0;
+        return cfg.direction === "desc" ? bVal - aVal : aVal - bVal;
+      });
+    }
+
+    const sortedRows = [...fixedTop, ...sortable, ...fixedBottom];
+
     return (
-      <div className="bg-white border rounded-lg shadow p-6 mb-6">
+      <div id={tableKey} className="bg-white border rounded-lg shadow p-6 mb-6" key={tableKey}>
         {/* Header */}
         <div className="flex justify-between items-center mb-4">
           <div className="text-green-700 font-semibold">{question}</div>
           <button className="text-sm text-blue-600 hover:underline">Export</button>
         </div>
 
-        {/* Score in left corner */}
+        {/* Score + status */}
         <div className="flex items-baseline mb-4 flex-col">
           <div className="text-2xl font-bold mr-4">{Math.round(npsObj.score)}</div>
-          <div className="text-lg">Your Net Promoter Score is <u className={`${u_color} underline decoration-2`}><span className="text-black">{status}</span></u></div>
+          <div className="text-lg">
+            <span className="text-gray-500 italic text-sm">Your Net Promoter Score is </span>
+            <u className={`${u_color} underline decoration-2`}>
+              <span className="text-black">{status}</span>
+            </u>
+          </div>
         </div>
 
-        {/* Scale above meter */}
+        {/* Scale labels */}
         <div className="flex justify-between text-xs text-gray-600 mb-1">
           <span>-100</span>
           <span>0</span>
           <span>100</span>
         </div>
 
-        {/* Gauge bar */}
+        {/* Gauge */}
         <div className="relative h-4 w-full bg-gradient-to-r from-red-500 via-yellow-400 to-green-500 rounded">
           <div
             className="absolute -top-3 w-10 h-10 rounded-full bg-black flex items-center justify-center text-white text-xs font-bold"
-            style={{ left: `calc(${markerLeft}% - 20px)` }} // shift by half circle width
+            style={{ left: `calc(${markerLeft}% - 20px)` }}
           >
             {Math.round(npsObj.score)}
           </div>
-
+        </div>
+        <div className="flex justify-between text-xs text-gray-600 mb-1">
+          <span>Needs Improvement</span>
+          <span></span>
+          <span>Excellent</span>
         </div>
 
-        {/* Table below */}
+        {/* Table */}
         <table className="min-w-full border-collapse text-xs mt-6">
           <thead className="bg-gray-100">
             <tr>
-              <th className="border px-3 py-2 text-left bg-gray-200 min-w-[10vw]">
-                Scale
-              </th>
-              <th className="border px-3 py-2 text-left bg-gray-200 min-w-[10vw]">
-              </th>
+              <th className="border px-3 py-2 text-left bg-gray-200 min-w-[10vw]">Scale</th>
+              {cols.map((c, ci) => {
+                const colSort = sortConfigs[tableKey] || {};
+                return (
+                  <th
+                    key={ci}
+                    onClick={() => handleSort(tableKey, ci)}
+                    className={`border px-3 py-2 text-center cursor-pointer hover:bg-blue-50 min-w-[5vw] ${colSort.colIndex === ci && colSort.direction !== "none"
+                      ? "text-blue-600 font-bold underline"
+                      : "text-gray-800"
+                      }`}
+                  >
+                    {c}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
-            <tr className={"bg-white hover:bg-yellow-50"}><td className="border px-3 py-2 font-bold">Total</td><td className="border px-3 py-2 text-center">{npsObj.base}</td></tr>
-            <tr className={"bg-gray-50 hover:bg-yellow-50"}><td className="border px-3 py-2 font-bold">NPS Score</td><td className="border px-3 py-2 text-center">{Math.round(npsObj.score)}</td></tr>
-            <tr className={"bg-white hover:bg-yellow-50"}><td className="border px-3 py-2 font-semibold">Promoter (9–10)</td><td className="border px-3 py-2 text-center">
-              <div className="flex flex-col items-center">
-                <span>{npsObj.promoter.pct}</span>
-                <span className="text-gray-500">{npsObj.promoter.count}</span>
-              </div></td></tr>
-            <tr className={"bg-gray-50 hover:bg-yellow-50"}><td className="border px-3 py-2 font-semibold">Passive (7–8)</td><td className="border px-3 py-2 text-center">
-              <div className="flex flex-col items-center">
-                <span>{npsObj.passive.pct}</span>
-                <span className="text-gray-500">{npsObj.passive.count}</span>
-              </div></td></tr>
-            <tr className={"bg-white hover:bg-yellow-50"}><td className="border px-3 py-2 font-semibold ">Detractor (0–6)</td><td className="border px-3 py-2 text-center">
-              <div className="flex flex-col items-center">
-                <span>{npsObj.detractor.pct}</span>
-                <span className="text-gray-500">{npsObj.detractor.count}</span>
-              </div></td></tr>
-            <tr className={"bg-gray-50 hover:bg-yellow-50"}><td className="border px-3 py-2 font-bold">Mean</td><td className="border px-3 py-2 text-center">{npsObj.mean}</td></tr>
-            <tr className={"bg-white hover:bg-yellow-50"}><td className="border px-3 py-2 font-bold">Median</td><td className="border px-3 py-2 text-center">{npsObj.median}</td></tr>
-            <tr className={"bg-gray-50 hover:bg-yellow-50"}><td className="border px-3 py-2 font-bold">Std Dev</td><td className="border px-3 py-2 text-center">{npsObj.stddev}</td></tr>
+            {sortedRows.map((r, ri) => (
+              <tr
+                key={ri}
+                className={ri % 2 ? "bg-gray-50 hover:bg-yellow-50" : "bg-white hover:bg-yellow-50"}
+              >
+                <td className="border px-3 py-2 font-semibold">{r.label}</td>
+                <td className="border px-3 py-2 text-center">
+                  <div className="flex flex-col items-center">
+                    <span>{r.pct || ""}</span>
+                    <span className="text-gray-500">{r.count}</span>
+                  </div>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
     );
   };
+
 
 
 
@@ -468,7 +469,6 @@ function CrosstabPage() {
 
       <div className="space-y-8">
         {groups.map((grp, gIdx) => {
-          console.log("Rendering group:", grp);
           const payload = grp.data || {};
           const matrix = payload.Matrix || payload.Total || payload;
           const summaryKeys = [
@@ -484,7 +484,7 @@ function CrosstabPage() {
           return (
             <div key={gIdx}>
               {grp.add_type === "NPS"
-                ? renderNPSCard(payload.NPS, grp.question)  // 🔹 custom renderer for NPS
+                ? renderNPSCard(payload.NPS, grp.question, `nps_${gIdx}`)  // 🔹 custom renderer for NPS
                 : renderMatrixCard(matrix, gIdx, `g${gIdx}`, grp.question)}
 
               {summaryKeys.map((k) =>
