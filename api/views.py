@@ -11,7 +11,7 @@ import pyreadstat
 import pandas as pd
 from .utils import crosstab_open_ended, log_activity
 import math
-from .utils import crosstab_single_choice, crosstab_multi_response,crosstab_numeric,crosstab_single_response_grid
+from .utils import crosstab_single_choice, crosstab_multi_response,crosstab_numeric,crosstab_single_response_grid,crosstab_nps
 
 
 
@@ -457,15 +457,25 @@ def quick_crosstab(request, project_id):
     for _, row in sc_rows.iterrows():
         var_name = str(row["Var_Name"]).strip()
         table_title = str(row["Table_Title"])
+        add_type = str(row.get("Add_Question_Type", "")).strip().upper()
+
         if var_name in df.columns:
-            value_labels = meta.variable_value_labels.get(var_name, {})
-            table_data = crosstab_single_choice(df, var_name, value_labels)
+            if add_type == "NPS":
+                table_data = crosstab_nps(df, var_name)   # 🔹 NPS function
+                qtype = "NPS"
+            else:
+                value_labels = meta.variable_value_labels.get(var_name, {})
+                table_data = crosstab_single_choice(df, var_name, value_labels)
+                qtype = "SC"
+
             output.append({
                 "question": table_title,
                 "var_name": var_name,
-                "type": "SC",
-                "data": table_data
+                "type": qtype,
+                "data": table_data,
+                "add_type": add_type
             })
+
 
     # --- Multi Response (MR) ---
     mr_groups = meta_df[meta_df["Question_Type"].str.upper() == "MR"]["Var_Grp"].unique()

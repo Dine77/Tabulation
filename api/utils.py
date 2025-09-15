@@ -4,6 +4,7 @@ import pandas as pd
 import pyreadstat
 import math
 import re
+import numpy as np
 
 
 def log_activity(user, action, project_name="", file_name="", details=""):
@@ -63,6 +64,48 @@ def merge_others(rows, base, is_cells=False):
     return cleaned
 
 
+def crosstab_nps(df, var_name):
+    results = {}
+
+    total_base = df[var_name].notna().sum()
+    freq = df[var_name].value_counts(dropna=True)
+    freq_pct = df[var_name].value_counts(normalize=True, dropna=True) * 100
+
+    # Promoters (9-10)
+    promoters = sum(int(freq.get(c, 0)) for c in [9, 10])
+    promoters_pct = round(promoters / total_base * 100, 1) if total_base > 0 else 0
+
+    # Passives (7-8)
+    passives = sum(int(freq.get(c, 0)) for c in [7, 8])
+    passives_pct = round(passives / total_base * 100, 1) if total_base > 0 else 0
+
+    # Detractors (0-6)
+    detractors = sum(int(freq.get(c, 0)) for c in range(0, 7))
+    detractors_pct = round(detractors / total_base * 100, 1) if total_base > 0 else 0
+
+    # NPS Score
+    nps_score = round(promoters_pct - detractors_pct, 1)
+
+    # Extra stats
+    data_series = df[var_name].dropna()
+    mean_val = round(float(np.mean(data_series)), 2) if not data_series.empty else None
+    median_val = round(float(np.median(data_series)), 2) if not data_series.empty else None
+    std_val = round(float(np.std(data_series, ddof=0)), 2) if not data_series.empty else None
+
+    results["NPS"] = {
+        "score": nps_score,
+        "base": int(total_base),
+        "promoter": {"count": int(promoters), "pct": f"{promoters_pct}%"},
+        "passive": {"count": int(passives), "pct": f"{passives_pct}%"},
+        "detractor": {"count": int(detractors), "pct": f"{detractors_pct}%"},
+        "mean": mean_val,
+        "median": median_val,
+        "stddev": std_val,
+    }
+
+    return results
+
+
 def crosstab_single_choice(df, var_name, value_labels, topbreaks=None):
     results = {}
 
@@ -88,6 +131,65 @@ def crosstab_single_choice(df, var_name, value_labels, topbreaks=None):
 
     rows = list(merged.values())
     rows = merge_others(rows, total_base)   # ✅ merge here
+
+    results["Total"] = {"base": int(total_base), "rows": rows}
+    return results
+
+
+# def crosstab_single_choice(df, var_name, value_labels, topbreaks=None, add_type=""):
+    results = {}
+
+    total_base = df[var_name].notna().sum()
+    freq = df[var_name].value_counts(dropna=True)
+    freq_pct = df[var_name].value_counts(normalize=True, dropna=True) * 100
+
+    rows = []
+
+    if str(add_type).lower() == "nps":
+        print("Add Type:", add_type)
+        # --- Distribution 0–10 ---
+        ordered_codes = sorted(freq.index.tolist())  # ensure only observed values 0..10
+        for code in ordered_codes:
+            code_str = str(int(code)) if isinstance(code, (int, float)) and code == int(code) else str(code)
+            count = int(freq.get(code, 0))
+            pct = round(freq_pct.get(code, 0.0), 1)
+            label = f"[{code_str}]"  # no label, just the number
+            rows.append({"label": label, "count": count, "pct": f"{pct}%"})
+
+        # --- Promoters, Detractors ---
+        promoters = sum(int(freq.get(c, 0)) for c in [9, 10])
+        detractors = sum(int(freq.get(c, 0)) for c in range(0, 7))
+
+        promoters_pct = (promoters / total_base * 100) if total_base > 0 else 0
+        detractors_pct = (detractors / total_base * 100) if total_base > 0 else 0
+        nps_score = round(promoters_pct - detractors_pct, 1)
+
+        # --- Add NPS row ---
+        rows.append({
+            "label": "NPS Score",
+            "count": nps_score,
+            "pct": ""
+        })
+
+    else:
+        # 🔹 Normal SC behaviour
+        merged = {}
+        for code, label in value_labels.items():
+            if code in freq:
+                code_str = str(int(code)) if isinstance(code, (int, float)) and code == int(code) else str(code)
+                group_key = str(label).strip().lower()
+
+                if group_key not in merged:
+                    merged[group_key] = {
+                        "label": f"[{code_str}] {label}",
+                        "count": 0,
+                        "pct": 0.0,
+                    }
+
+                merged[group_key]["count"] += int(freq[code])
+                merged[group_key]["pct"] += round(float(freq_pct[code]), 1)
+
+        rows = list(merged.values())
 
     results["Total"] = {"base": int(total_base), "rows": rows}
     return results
@@ -169,7 +271,7 @@ def crosstab_open_ended(df, var_name, top_n=20):
 
     rows = []
     for _, row in counts.head(top_n).iterrows():
-        rows.append({"label": row["response"], "count": int(row["count"]), "pct": round((row["count"]/base)*100, 1)})
+        rows.append({"label": row["response"], "count": int(row["count"]), "pct": f"{round((row["count"]/base)*100, 1)} %"})
 
     rows = merge_others(rows, base)   # ✅ merge here
 
@@ -340,7 +442,7 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
         for var_name, _ in attributes:
             series = attr_data[var_name]["series"]
             mean_row["cells"].append({"count": round(series.mean(), 2) if len(series) > 0 else 0})
-        result["MeanSummary"] = {
+        result["Mean Summary"] = {
             "base": total_base,
             "columns": [label for _, label in attributes],
             "rows": [mean_row]
