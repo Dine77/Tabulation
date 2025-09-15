@@ -57,7 +57,7 @@ def merge_others(rows, base, is_cells=False):
                 cell["pct"] = f"{pct:.1f}%"
         else:
             pct = (merged["count"] / base * 100) if base > 0 else 0
-            merged["pct"] = f"{pct:.1f}"
+            merged["pct"] = f"{pct:.1f}%"
         cleaned.append(merged)
 
     return cleaned
@@ -83,7 +83,8 @@ def crosstab_single_choice(df, var_name, value_labels, topbreaks=None):
                     "pct": 0.0,
                 }
             merged[group_key]["count"] += int(freq[code])
-            merged[group_key]["pct"] += round(float(freq_pct[code]), 1)
+            merged[group_key]["pct"] = f"{round(float(freq_pct[code]), 1)}%"
+
 
     rows = list(merged.values())
     rows = merge_others(rows, total_base)   # ✅ merge here
@@ -124,7 +125,7 @@ def crosstab_multi_response(df, var_group, meta_rows, meta):
         if key not in merged:
             merged[key] = {"label": var_label, "count": 0, "pct": 0.0}
         merged[key]["count"] += count
-        merged[key]["pct"] += pct
+        merged[key]["pct"] = f"{pct}%"
 
     rows = []
     seen = set()
@@ -323,16 +324,16 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
             }
 
         # Top / Top2
-        result["TopSummary"] = build_summary("Top", [scale_codes[-1]])
-        result["Top2Summary"] = build_summary("Top 2", scale_codes[-2:])
+        result["Top Summary"] = build_summary("Top Summary", [scale_codes[-1]])
+        result["Top2 Summary"] = build_summary("Top2 Summary", scale_codes[-2:])
 
         # Bottom / Bottom2
-        result["BottomSummary"] = build_summary("Bottom", [scale_codes[0]])
-        result["Bottom2Summary"] = build_summary("Bottom 2", scale_codes[:2])
+        result["Bottom Summary"] = build_summary("Bottom Summary", [scale_codes[0]])
+        result["Bottom2 Summary"] = build_summary("Bottom2 Summary", scale_codes[:2])
 
         # Middle (only for odd scale length like 5, 7, 11...)
         if middle_code is not None:
-            result["MiddleSummary"] = build_summary("Middle", [middle_code])
+            result["Middle Summary"] = build_summary("Middle Summary", [middle_code])
 
         # Mean summary
         mean_row = {"label": "Mean", "cells": []}

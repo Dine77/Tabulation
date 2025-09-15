@@ -137,6 +137,7 @@ function CrosstabPage() {
 
     return (
       <div
+        id={`matrix_${groupIdx}`}
         className="bg-white border rounded-lg shadow p-4 mb-6"
         key={tableKey}
       >
@@ -155,7 +156,7 @@ function CrosstabPage() {
           <table className="min-w-full border-collapse text-xs">
             <thead className="bg-gray-100">
               <tr>
-                <th className="border px-3 py-2 text-left bg-gray-200">
+                <th className="border px-3 py-2 text-left bg-gray-200 min-w-[10vw]">
                   Scale
                 </th>
                 {cols.map((c, ci) => {
@@ -164,11 +165,10 @@ function CrosstabPage() {
                     <th
                       key={ci}
                       onClick={() => handleSort(tableKey, ci)}
-                      className={`border px-3 py-2 text-center cursor-pointer hover:bg-blue-50 ${
-                        colSort.colIndex === ci && colSort.direction !== "none"
-                          ? "text-blue-600 font-bold underline"
-                          : "text-gray-800"
-                      }`}
+                      className={`border px-3 py-2 text-center cursor-pointer hover:bg-blue-50 min-w-[5vw] ${colSort.colIndex === ci && colSort.direction !== "none"
+                        ? "text-blue-600 font-bold underline"
+                        : "text-gray-800"
+                        }`}
                     >
                       {c}
                     </th>
@@ -180,16 +180,15 @@ function CrosstabPage() {
               {rows.map((r, ri) => (
                 <tr
                   key={ri}
-                  className={`${
-                    ri % 2 ? "bg-gray-50" : "bg-white"
-                  } hover:bg-yellow-50`}
+                  className={`${ri % 2 ? "bg-gray-50" : "bg-white"
+                    } hover:bg-yellow-50`}
                 >
                   <td className="border px-3 py-2 font-semibold">{r.label}</td>
                   {r.cells ? (
                     r.cells.map((cell, ci) => (
                       <td key={ci} className="border px-3 py-2 text-center">
                         <div className="flex flex-col items-center">
-                          <span>{cell.pct}%</span>
+                          <span>{cell.pct}</span>
                           <span className="text-gray-500">{cell.count}</span>
                         </div>
                       </td>
@@ -197,7 +196,7 @@ function CrosstabPage() {
                   ) : (
                     <td className="border px-3 py-2 text-center">
                       <div className="flex flex-col items-center">
-                        <span>{r.pct}%</span>
+                        <span>{r.pct}</span>
                         <span className="text-gray-500">{r.count}</span>
                       </div>
                     </td>
@@ -269,20 +268,24 @@ function CrosstabPage() {
               {/* --- Attribute rows --- */}
               {cols.map((attrLabel, idx) => {
                 const cell = rows[0]?.cells?.[idx] || {};
+                const linkId = `matrix_${groupIdx}`;   // ✅ just group index, matches matrix card
                 return (
                   <tr
                     key={idx}
-                    className={`${
-                      idx % 2 ? "bg-gray-50" : "bg-white"
-                    } hover:bg-yellow-50`}
+                    className={`${idx % 2 ? "bg-gray-50" : "bg-white"} hover:bg-yellow-50`}
                   >
-                    <td className="border px-3 py-2">{attrLabel}</td>
+                    <td className="border px-3 py-2">
+                      <a
+                        href={`#${linkId}`}
+                        className="text-blue-600 hover:underline"
+                      >
+                        {attrLabel}
+                      </a>
+                    </td>
                     <td className="border px-3 py-2 text-center">
                       <div className="flex flex-col items-center">
                         <span>{cell.pct || ""}</span>
-                        <span className="text-gray-500">
-                          {cell.count || ""}
-                        </span>
+                        <span className="text-gray-500">{cell.count || ""}</span>
                       </div>
                     </td>
                   </tr>
@@ -312,11 +315,10 @@ function CrosstabPage() {
         <button
           onClick={runQuickCrosstab}
           disabled={loading}
-          className={`px-4 py-2 rounded-lg ${
-            loading
-              ? "bg-gray-400 cursor-not-allowed"
-              : "bg-blue-600 hover:bg-blue-700 text-white"
-          }`}
+          className={`px-4 py-2 rounded-lg ${loading
+            ? "bg-gray-400 cursor-not-allowed"
+            : "bg-blue-600 hover:bg-blue-700 text-white"
+            }`}
         >
           {loading ? "Generating..." : "Run Quick Crosstab"}
         </button>
@@ -332,6 +334,7 @@ function CrosstabPage() {
 
       <div className="space-y-8">
         {groups.map((grp, gIdx) => {
+          console.log(groups);
           const payload = grp.data || {};
           const matrix = payload.Matrix || payload.Total || payload;
           const summaryKeys = [
@@ -343,9 +346,10 @@ function CrosstabPage() {
             "Mean Summary",
           ];
 
+
           return (
             <div key={gIdx}>
-              {renderMatrixCard(matrix, gIdx, `g${gIdx}`,grp.question)}
+              {renderMatrixCard(matrix, gIdx, `g${gIdx}`, grp.question)}
               {summaryKeys.map((k) =>
                 payload[k] ? renderSummaryCard(payload[k], gIdx, k) : null
               )}
