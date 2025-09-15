@@ -129,7 +129,7 @@ function CrosstabPage() {
   };
 
   // -------- Renderers ----------
-  const renderMatrixCard = (matrixObj, groupIdx, tableKeyBase) => {
+  const renderMatrixCard = (matrixObj, groupIdx, tableKeyBase, question) => {
     if (!matrixObj) return null;
     const tableKey = `${tableKeyBase}_Matrix`;
     const cols = matrixObj.columns || ["Qualified"];
@@ -141,7 +141,7 @@ function CrosstabPage() {
         key={tableKey}
       >
         <div className="flex justify-between items-center mb-3">
-          <div className="text-green-700 font-semibold">Matrix</div>
+          <div className="text-green-700 font-semibold">{question}</div>
           <button
             onClick={() =>
               exportMatrixExcel(matrixObj, `Matrix_${groupIdx}.xlsx`)
@@ -189,7 +189,7 @@ function CrosstabPage() {
                     r.cells.map((cell, ci) => (
                       <td key={ci} className="border px-3 py-2 text-center">
                         <div className="flex flex-col items-center">
-                          <span>{cell.pct}</span>
+                          <span>{cell.pct}%</span>
                           <span className="text-gray-500">{cell.count}</span>
                         </div>
                       </td>
@@ -197,7 +197,7 @@ function CrosstabPage() {
                   ) : (
                     <td className="border px-3 py-2 text-center">
                       <div className="flex flex-col items-center">
-                        <span>{r.pct}</span>
+                        <span>{r.pct}%</span>
                         <span className="text-gray-500">{r.count}</span>
                       </div>
                     </td>
@@ -335,20 +335,17 @@ function CrosstabPage() {
           const payload = grp.data || {};
           const matrix = payload.Matrix || payload.Total || payload;
           const summaryKeys = [
-            "TopSummary",
-            "Top2Summary",
-            "BottomSummary",
-            "Bottom2Summary",
-            "MiddleSummary",
-            "MeanSummary",
+            "Top Summary",
+            "Top2 Summary",
+            "Bottom Summary",
+            "Bottom2 Summary",
+            "Middle Summary",
+            "Mean Summary",
           ];
 
           return (
             <div key={gIdx}>
-              <h2 className="text-green-700 font-semibold mb-2">
-                {grp.question}
-              </h2>
-              {renderMatrixCard(matrix, gIdx, `g${gIdx}`)}
+              {renderMatrixCard(matrix, gIdx, `g${gIdx}`,grp.question)}
               {summaryKeys.map((k) =>
                 payload[k] ? renderSummaryCard(payload[k], gIdx, k) : null
               )}
