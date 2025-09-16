@@ -1,7 +1,57 @@
 import React, { useState } from "react";
+import { useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { saveAs } from "file-saver";
 import * as XLSX from "xlsx";
+import { Dialog } from "@headlessui/react";
+
+const NewCrosstabModal = ({ open, onClose, topbreaks, selected, setSelected, onRun }) => {
+  return (
+    <Dialog open={open} onClose={onClose} className="relative z-50">
+      <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+
+      <div className="fixed inset-0 flex items-center justify-center p-4">
+        <Dialog.Panel className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl">
+          <Dialog.Title className="text-lg font-bold mb-4">
+            Create New Crosstab
+          </Dialog.Title>
+
+          <label className="block mb-2 text-sm font-medium text-gray-700">
+            Select Topbreak
+          </label>
+          <select
+            value={selected}
+            onChange={(e) => setSelected(e.target.value)}
+            className="w-full border rounded p-2 mb-6"
+          >
+            <option value="">-- Choose a Topbreak --</option>
+            {topbreaks.map((tb, idx) => (
+              <option key={idx} value={tb}>{tb}</option>
+            ))}
+          </select>
+
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-gray-400 text-white rounded hover:bg-gray-500"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => onRun(selected)}
+              disabled={!selected}
+              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+            >
+              Run Crosstab
+            </button>
+          </div>
+        </Dialog.Panel>
+      </div>
+    </Dialog>
+  );
+};
+
+
 
 function CrosstabPage() {
   const { id } = useParams();
@@ -12,6 +62,51 @@ function CrosstabPage() {
   const [error, setError] = useState(null);
   const [menuOpen, setMenuOpen] = useState(null);
   const [sortConfigs, setSortConfigs] = useState({});
+
+  const [showNewModal, setShowNewModal] = useState(false);
+  const [topbreaks, setTopbreaks] = useState([]);
+  const [selectedTopbreak, setSelectedTopbreak] = useState("");
+
+
+  useEffect(() => {
+    if (showNewModal) {
+      fetch(`http://127.0.0.1:8000/api/projects/${id}/meta_titles/`)
+        .then((res) => res.json())
+        .then((data) => {
+          setTopbreaks(data); // ✅ fills dropdown
+        })
+        .catch((err) => console.error("Error fetching topbreaks:", err));
+    }
+  }, [showNewModal]);
+
+
+
+  const runNewCrosstab = (topbreak) => {
+    setLoading(true);
+    setError(null);
+
+    fetch(`http://127.0.0.1:8000/api/projects/${id}/new_crosstab/?topbreak=${encodeURIComponent(topbreak)}`)
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to generate new crosstab");
+        return res.json();
+      })
+      .then((data) => {
+        const arr = Array.isArray(data) ? data : [data];
+        const normalized = arr.map((it, idx) => ({
+          ...it,
+          question: it.question || it.Table_Title || it.var_name || `Q${idx + 1}`,
+          data: it.data || it,
+        }));
+        setGroups(normalized); // replace old tables
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error(err);
+        setError("Error generating new crosstabs");
+        setLoading(false);
+      });
+  };
+
 
   // fetch
   const runQuickCrosstab = () => {
@@ -217,7 +312,9 @@ function CrosstabPage() {
         <table className="min-w-full border-collapse text-xs mt-6">
           <thead className="bg-gray-100">
             <tr>
-              <th className="border px-3 py-2 text-left bg-gray-200 min-w-[10vw]">Scale</th>
+              <th className="border px-3 py-2 text-left bg-gray-200 min-w-[10vw]">
+                Scale
+              </th>
               {cols.map((c, ci) => {
                 const colSort = sortConfigs[tableKey] || {};
                 return (
@@ -229,7 +326,10 @@ function CrosstabPage() {
                       : "text-gray-800"
                       }`}
                   >
-                    {c}
+                    {c.letter && (
+                      <span className="text-blue-600 font-bold mr-1">{c.letter}</span>
+                    )}
+                    {c.label}
                   </th>
                 );
               })}
@@ -305,7 +405,10 @@ function CrosstabPage() {
                         : "text-gray-800"
                         }`}
                     >
-                      {c}
+                      {c.letter && (
+                        <span className="text-blue-600 font-bold mr-1">{c.letter}</span>
+                      )}
+                      {c.label}
                     </th>
                   );
                 })}
@@ -445,8 +548,7 @@ function CrosstabPage() {
           Back to Projects
         </button>
       </div>
-
-      <div className="mb-6">
+      <div className="mb-6 flex gap-4">
         <button
           onClick={runQuickCrosstab}
           disabled={loading}
@@ -457,7 +559,54 @@ function CrosstabPage() {
         >
           {loading ? "Generating..." : "Run Quick Crosstab"}
         </button>
+
+        <button
+          onClick={() => setShowNewModal(!showNewModal)} // toggle visibility
+          className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white"
+        >
+          New Crosstab
+        </button>
       </div>
+
+      {/* ✅ Inline dropdown section */}
+      {showNewModal && (
+        <div className="bg-white border rounded-lg shadow p-4 w-full max-w-md mt-4">
+          <label className="block mb-2 text-sm font-medium text-gray-700">
+            Select Topbreak
+          </label>
+          <select
+            value={selectedTopbreak}
+            onChange={(e) => setSelectedTopbreak(e.target.value)}
+            className="w-full border rounded p-2 mb-4"
+          >
+            <option value="">-- Choose a Topbreak --</option>
+            {topbreaks.map((tb, idx) => (
+              <option key={idx} value={tb}>{tb}</option>
+            ))}
+          </select>
+
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={() => setShowNewModal(false)}
+              className="px-4 py-2 bg-gray-400 text-white rounded hover:bg-gray-500"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                setShowNewModal(false);
+                runNewCrosstab(selectedTopbreak);
+              }}
+              disabled={!selectedTopbreak}
+              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+            >
+              Run Crosstab
+            </button>
+          </div>
+        </div>
+      )}
+
+
 
       {loading && (
         <div className="flex justify-center my-6">
@@ -492,8 +641,6 @@ function CrosstabPage() {
               )}
             </div>
           );
-
-
         })}
       </div>
     </div>

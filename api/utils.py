@@ -5,6 +5,10 @@ import pyreadstat
 import math
 import re
 import numpy as np
+import os
+import pandas as pd
+from django.conf import settings
+from .models import Project
 
 
 def log_activity(user, action, project_name="", file_name="", details=""):
@@ -134,6 +138,140 @@ def crosstab_single_choice(df, var_name, value_labels, topbreaks=None):
 
     results["Total"] = {"base": int(total_base), "rows": rows}
     return results
+
+def get_topbreak_letters(n: int):
+    """Return A, B, C … AA, AB if needed"""
+    letters = []
+    for i in range(n):
+        q, r = divmod(i, 26)
+        if q == 0:
+            letters.append(chr(65 + r))
+        else:
+            letters.append(chr(65 + q - 1) + chr(65 + r))
+    return letters
+
+
+def build_topbreak_columns(df, topbreak: str, meta):
+    """
+    Returns:
+      cols = [("Total", df), ("Finance", df1), ("Tech", df2)...]
+      columns = [{"label": "Total", "letter": ""}, {"label": "Finance", "letter": "A"}, ...]
+    """
+    cols = [("Total", df)]
+
+    if topbreak in df.columns:
+        for tb_value, tb_df in df.groupby(topbreak):
+            # Map code → label if available
+            label = str(tb_value)
+            if topbreak in meta.variable_value_labels:
+                label = meta.variable_value_labels[topbreak].get(tb_value, tb_value)
+            cols.append((label, tb_df))
+
+    # assign A/B/C… letters (skip Total)
+    letters = get_topbreak_letters(len(cols) - 1)
+    columns = [{"label": "Total", "letter": ""}]
+    for i, (col_name, _) in enumerate(cols[1:]):
+        columns.append({"label": col_name, "letter": letters[i]})
+
+    return cols, columns
+
+
+# ---------- Single Choice ----------
+def crosstab_single_choice_with_topbreak(df, var_name, value_labels, topbreak, meta):
+    if topbreak not in df.columns:
+        return crosstab_single_choice(df, var_name, value_labels)
+
+    cols, columns = build_topbreak_columns(df, topbreak, meta)
+    rows = []
+
+    for code, label in value_labels.items():
+        row_data = {"label": f"[{code}] {label}", "cells": []}
+        for col_name, sub_df in cols:
+            base = sub_df[var_name].notna().sum()
+            count = (sub_df[var_name] == code).sum()
+            pct = f"{round((count / base * 100) if base > 0 else 0, 1)}%"
+            row_data["cells"].append({"count": int(count), "pct": pct})
+        rows.append(row_data)
+
+    return {"columns": columns, "rows": rows}
+
+
+# ---------- Multi Response ----------
+def crosstab_multi_response_with_topbreak(df, var_group, group_rows, meta, topbreak):
+    cols, columns = build_topbreak_columns(df, topbreak, meta)
+    rows = []
+
+    for _, row in group_rows.iterrows():
+        var = row["Var_Name"]
+        label_col = "Option_Text" if "Option_Text" in row.index else "Var_Label"
+        label = row[label_col]
+        row_data = {"label": label, "cells": []}
+
+        for col_name, sub_df in cols:
+            base = sub_df[var].notna().sum()
+            count = sub_df[var].sum() if var in sub_df else 0
+            pct = f"{round((count / base * 100) if base > 0 else 0, 1)}%"
+            row_data["cells"].append({"count": int(count), "pct": pct})
+        rows.append(row_data)
+
+    return {"columns": columns, "rows": rows}
+
+
+# ---------- Numeric ----------
+def crosstab_numeric_with_topbreak(df, var_name, topbreak, meta):
+    cols, columns = build_topbreak_columns(df, topbreak, meta)
+    rows = []
+
+    stats = ["Mean", "Median", "StdDev"]
+    for stat in stats:
+        row_data = {"label": stat, "cells": []}
+        for col_name, sub_df in cols:
+            if stat == "Mean":
+                val = round(sub_df[var_name].mean(), 2)
+            elif stat == "Median":
+                val = round(sub_df[var_name].median(), 2)
+            else:
+                val = round(sub_df[var_name].std(), 2)
+            row_data["cells"].append({"count": val, "pct": ""})
+        rows.append(row_data)
+
+    return {"columns": columns, "rows": rows}
+
+
+# ---------- Open Ended ----------
+def crosstab_open_ended_with_topbreak(df, var_name, topbreak, meta):
+    cols, columns = build_topbreak_columns(df, topbreak, meta)
+    rows = []
+
+    for _, row in df[[var_name]].dropna().iterrows():
+        row_data = {"label": str(row[var_name]), "cells": []}
+        for col_name, sub_df in cols:
+            row_data["cells"].append({"count": "", "pct": ""})
+        rows.append(row_data)
+
+    return {"columns": columns, "rows": rows}
+
+
+# ---------- Single Response Grid ----------
+def crosstab_single_response_grid_with_topbreak(df, var_group, group_rows, meta, topbreak):
+    cols, columns = build_topbreak_columns(df, topbreak, meta)
+    rows = []
+
+    for _, row in group_rows.iterrows():
+        var = row["Var_Name"]
+        label_col = "Option_Text" if "Option_Text" in row.index else "Var_Label"
+        label = row[label_col]
+        row_data = {"label": label, "cells": []}
+
+        for col_name, sub_df in cols:
+            base = sub_df[var].notna().sum()
+            count = (sub_df[var] == 1).sum()
+            pct = f"{round((count / base * 100) if base > 0 else 0, 1)}%"
+            row_data["cells"].append({"count": int(count), "pct": pct})
+        rows.append(row_data)
+
+    return {"columns": columns, "rows": rows}
+
 
 
 # def crosstab_single_choice(df, var_name, value_labels, topbreaks=None, add_type=""):
@@ -449,3 +587,23 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
         }
 
     return result
+
+
+# --- Load Project Meta ---
+def load_project_meta(project_id):
+    """
+    Load the project's meta Excel as a DataFrame.
+    Returns (meta_df, error_message).
+    """
+    project = Project.objects(id=project_id).first()
+    if not project or not project.meta_file:
+        return None, "Meta Excel not found"
+
+    meta_path = os.path.join(settings.MEDIA_ROOT, project.meta_file)
+    try:
+        meta_df = pd.read_excel(meta_path)
+        return meta_df, None
+    except Exception as e:
+        return None, str(e)
+    
+

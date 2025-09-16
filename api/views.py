@@ -3,15 +3,35 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework import status
 from django.conf import settings
+from django.http import JsonResponse
 import os
 from datetime import datetime
 from .models import Project,ActivityLog
 from .serializers import ProjectSerializer
 import pyreadstat
 import pandas as pd
-from .utils import crosstab_open_ended, log_activity
+from .utils import crosstab_open_ended, log_activity,load_project_meta, crosstab_multi_response_with_topbreak,crosstab_numeric_with_topbreak,crosstab_open_ended_with_topbreak,crosstab_single_response_grid_with_topbreak
 import math
-from .utils import crosstab_single_choice, crosstab_multi_response,crosstab_numeric,crosstab_single_response_grid,crosstab_nps
+from .utils import crosstab_single_choice, crosstab_multi_response,crosstab_numeric,crosstab_single_response_grid,crosstab_nps,crosstab_single_choice_with_topbreak
+
+
+
+# Helper to load meta Excel as DataFrame
+def get_meta_titles(request, project_id):
+    meta_df, error = load_project_meta(project_id)
+    if error:
+        return Response({"error": error}, status=400)
+
+    titles = (
+        meta_df["Table_Title"]
+        .dropna()
+        .drop_duplicates()
+        .astype(str)
+        .tolist()
+    )
+    return JsonResponse(titles, safe=False)
+
+
 
 
 
@@ -276,152 +296,6 @@ def list_logs(request):
 
 
 
-
-# Quick Crosstab
-# @api_view(["GET"])
-# def quick_crosstab(request, project_id):
-#     project = Project.objects(id=project_id).first()
-#     if not project:
-#         return Response({"error": "Project not found"}, status=404)
-
-#     if not project.files or len(project.files) == 0:
-#         return Response({"error": "No data files found"}, status=400)
-
-#     # Use first SAV file
-#     sav_path = os.path.join(settings.MEDIA_ROOT, project.files[0])
-
-#     # Load SAV with metadata
-#     df, meta = pyreadstat.read_sav(sav_path)
-
-#     # Load meta Excel (just for list of variables & titles)
-#     if not project.meta_file:
-#         return Response({"error": "Meta Excel not found"}, status=400)
-#     meta_path = os.path.join(settings.MEDIA_ROOT, project.meta_file)
-#     meta_df = pd.read_excel(meta_path)
-
-#     output = []
-
-#     for _, row in meta_df.iterrows():
-#         qtype = str(row.get("Question_Type", "")).strip().upper()
-#         var_name = str(row.get("Var_Name", "")).strip()
-#         table_title = str(row.get("Table_Title", var_name))
-#         Var_Grp = str(row.get("Var_Grp", "")).strip()
-
-#         if qtype == "SR" and var_name in df.columns:
-#             # take value labels only from SAV
-#             value_labels = meta.variable_value_labels.get(var_name, {})
-
-#             table_data = crosstab_single_choice(df, var_name, value_labels)
-#             output.append({
-#                 "question": table_title,
-#                 "var_name": var_name,
-#                 "data": table_data
-#             })
-#         elif qtype == "MR" and Var_Grp:
-#                 group_rows = meta_df[meta_df["Var_Grp"] == Var_Grp]
-#                 table_data = crosstab_multi_response(df, Var_Grp, group_rows, meta)
-#                 output.append({
-#                     "question": table_title,
-#                     "var_group": Var_Grp,
-#                     "data": table_data
-#                 })    
-
-#     return Response(output)
-
-
-
-# @api_view(["GET"])
-# def quick_crosstab(request, project_id):
-    # project = Project.objects(id=project_id).first()
-    # if not project:
-    #     return Response({"error": "Project not found"}, status=404)
-
-    # if not project.files or len(project.files) == 0:
-    #     return Response({"error": "No data files found"}, status=400)
-
-    # # Use first SAV file
-    # sav_path = os.path.join(settings.MEDIA_ROOT, project.files[0])
-
-    # # Load SAV with metadata
-    # df, meta = pyreadstat.read_sav(sav_path)
-
-    # # Load meta Excel
-    # if not project.meta_file:
-    #     return Response({"error": "Meta Excel not found"}, status=400)
-    # meta_path = os.path.join(settings.MEDIA_ROOT, project.meta_file)
-    # meta_df = pd.read_excel(meta_path)
-
-    # output = []
-
-    # def clean_for_json(obj):
-    #     if isinstance(obj, dict):
-    #         return {k: clean_for_json(v) for k, v in obj.items()}
-    #     elif isinstance(obj, list):
-    #         return [clean_for_json(v) for v in obj]
-    #     elif isinstance(obj, float) and math.isnan(obj):
-    #         return 0
-    #     return obj
-
-    # seen_mr = set()
-
-    # for _, row in meta_df.iterrows():
-    #     qtype = str(row.get("Question_Type", "")).strip().upper()
-    #     var_name = str(row.get("Var_Name", "")).strip()
-    #     table_title = str(row.get("Table_Title", var_name))
-    #     var_grp = str(row.get("Var_Grp", "")).strip()
-    #     # --- Single Choice / Single Response ---
-    #     if qtype in ["SC", "SR"] and var_name in df.columns:
-    #         value_labels = meta.variable_value_labels.get(var_name, {})
-    #         table_data = crosstab_single_choice(df, var_name, value_labels)
-    #         output.append({
-    #             "question": table_title,
-    #             "var_name": var_name,
-    #             "data": table_data
-    #         })
-    #     # --- Multi Response ---
-    #     elif qtype == "MR" and var_grp and var_grp not in seen_mr:
-    #         group_rows = meta_df[meta_df["Var_Grp"] == var_grp]
-    #         table_data = crosstab_multi_response(df, var_grp, group_rows, meta)
-    #         output.append({
-    #             "question": table_title,
-    #             "var_group": var_grp,
-    #             "data": table_data
-    #         })
-    #         seen_mr.add(var_grp)   # ✅ ensure each group only once
-    #     # --- Numeric Response ---
-    #     elif qtype == "NR" and var_name in df.columns:
-    #         table_data = crosstab_numeric(df, var_name)
-    #         output.append({
-    #             "question": table_title,
-    #             "var_name": var_name,
-    #             "type": "NR",
-    #             "data": table_data
-    #         })
-    #     # --- Open Ended ---
-    #     elif qtype == "OE" and var_name in df.columns:
-    #         table_data = crosstab_open_ended(df, var_name)
-    #         output.append({
-    #             "question": table_title,
-    #             "var_name": var_name,
-    #             "type": "OE",
-    #             "data": table_data
-    #         })
-    #         # --- Single Response Grid ---
-    #     elif qtype == "SRG" and var_grp:
-    #         group_rows = meta_df[meta_df["Var_Grp"] == var_grp]
-    #         table_data = crosstab_single_response_grid(df, var_grp, group_rows, meta)
-    #         output.append({
-    #             "question": table_title,
-    #             "var_group": var_grp,
-    #             "type": "SRG",
-    #             "data": table_data
-    #         })
-
-
-    # return Response(clean_for_json(output))
-
-
-
 @api_view(["GET"])
 def quick_crosstab(request, project_id):
     project = Project.objects(id=project_id).first()
@@ -532,3 +406,127 @@ def quick_crosstab(request, project_id):
         })
 
     return Response(clean_for_json(output))
+
+# Helper to get var name from title
+def get_var_name_from_title(meta_df, table_title):
+    row = meta_df[meta_df["Table_Title"] == table_title]
+    if not row.empty:
+        return str(row.iloc[0]["Var_Name"]).strip()
+    return None
+
+
+
+# New Crosstab view 
+@api_view(["GET"])
+def new_crosstab(request, project_id):
+    topbreak_title = request.GET.get("topbreak")
+    project = Project.objects(id=project_id).first()
+    if not project:
+        return Response({"error": "Project not found"}, status=404)
+
+    # Load data
+    sav_path = os.path.join(settings.MEDIA_ROOT, project.files[0])
+    df, meta = pyreadstat.read_sav(sav_path)
+
+    meta_path = os.path.join(settings.MEDIA_ROOT, project.meta_file)
+    meta_df = pd.read_excel(meta_path)
+
+    # 🔹 Map Table_Title → Var_Name
+    topbreak_var = None
+    if topbreak_title:
+        topbreak_var = get_var_name_from_title(meta_df, topbreak_title)
+
+    output = []
+
+    # --- Single Choice (SC/SR) ---
+    sc_rows = meta_df[meta_df["Question_Type"].str.upper().isin(["SC", "SR"])]
+    for _, row in sc_rows.iterrows():
+        var_name = str(row["Var_Name"]).strip()
+        table_title = str(row["Table_Title"])
+        value_labels = meta.variable_value_labels.get(var_name, {})
+
+        if topbreak_var:
+            table_data = crosstab_single_choice_with_topbreak(df, var_name, value_labels, topbreak_var,meta)
+        else:
+            table_data = crosstab_single_choice(df, var_name, value_labels)
+
+        output.append({
+            "question": table_title,
+            "var_name": var_name,
+            "type": "SC",
+            "data": table_data
+        })
+
+    # --- Multi Response (MR) ---
+    mr_groups = meta_df[meta_df["Question_Type"].str.upper() == "MR"]["Var_Grp"].unique()
+    for grp in mr_groups:
+        group_rows = meta_df[meta_df["Var_Grp"] == grp]
+        table_title = group_rows.iloc[0]["Table_Title"]
+
+        if topbreak_var:
+            table_data = crosstab_multi_response_with_topbreak(df, grp, group_rows, meta, topbreak_var)
+        else:
+            table_data = crosstab_multi_response(df, grp, group_rows, meta)
+
+        output.append({
+            "question": table_title,
+            "var_group": grp,
+            "type": "MR",
+            "data": table_data
+        })
+
+    # --- Numeric (NR) ---
+    nr_rows = meta_df[meta_df["Question_Type"].str.upper() == "NR"]
+    for _, row in nr_rows.iterrows():
+        var_name = str(row["Var_Name"]).strip()
+        table_title = str(row["Table_Title"])
+
+        if topbreak_var:
+            table_data = crosstab_numeric_with_topbreak(df, var_name, topbreak_var,meta)
+        else:
+            table_data = crosstab_numeric(df, var_name)
+
+        output.append({
+            "question": table_title,
+            "var_name": var_name,
+            "type": "NR",
+            "data": table_data
+        })
+
+    # --- Open Ended (OE) ---
+    # oe_rows = meta_df[meta_df["Question_Type"].str.upper() == "OE"]
+    # for _, row in oe_rows.iterrows():
+    #     var_name = str(row["Var_Name"]).strip()
+    #     table_title = str(row["Table_Title"])
+
+    #     if topbreak_var:
+    #         table_data = crosstab_open_ended_with_topbreak(df, var_name, topbreak_var,meta)
+    #     else:
+    #         table_data = crosstab_open_ended(df, var_name)
+
+    #     output.append({
+    #         "question": table_title,
+    #         "var_name": var_name,
+    #         "type": "OE",
+    #         "data": table_data
+    #     })
+
+    # --- Single Response Grid (SRG) ---
+    srg_groups = meta_df[meta_df["Question_Type"].str.upper() == "SRG"]["Var_Grp"].unique()
+    for grp in srg_groups:
+        group_rows = meta_df[meta_df["Var_Grp"] == grp]
+        table_title = group_rows.iloc[0]["Table_Title"]
+
+        if topbreak_var:
+            table_data = crosstab_single_response_grid_with_topbreak(df, grp, group_rows, meta, topbreak_var)
+        else:
+            table_data = crosstab_single_response_grid(df, grp, group_rows, meta)
+
+        output.append({
+            "question": table_title,
+            "var_group": grp,
+            "type": "SRG",
+            "data": table_data
+        })
+
+    return Response(output)

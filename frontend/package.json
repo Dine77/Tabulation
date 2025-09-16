@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@headlessui/react": "^2.2.8",
     "@tailwindcss/vite": "^4.1.13",
     "file-saver": "^2.0.5",
     "react": "^19.1.1",
