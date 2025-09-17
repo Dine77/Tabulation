@@ -5,7 +5,7 @@ services:
     build: ./frontend
     container_name: react_app
     ports:
-      - "80:80" # React on port 80
+      - "80:80"
     depends_on:
       - api
 
