@@ -1,3 +1,4 @@
+from unittest import result
 from .models import ActivityLog
 from datetime import datetime
 import pandas as pd
@@ -236,6 +237,97 @@ def build_topbreak(df, meta_df, topbreak_title, meta):
 
     return cols, columns
 
+def build_topbreak_summaries(df, var_group, group_rows, meta, children_results):
+    base_table = crosstab_single_response_grid(df, var_group, group_rows, meta)
+
+    merged = {}
+    summary_keys = [
+        "Top Summary", "Top2 Summary",
+        "Bottom Summary", "Bottom2 Summary",
+        "Middle Summary", "Mean Summary",
+    ]
+
+    for key in summary_keys:
+        if not base_table.get(key):
+            continue
+
+        # Columns = Total + each topbreak
+        combined = {
+            "base": base_table[key]["base"],
+            "columns": ["Total"] + [c["topbreak_label"].strip() for c in children_results],
+            "rows": []
+        }
+
+        # Each row = Row1, Row2, Row3 … not just one row
+        row_labels = base_table[key]["columns"]  # <- "Row 1", "Row 2", ...
+        for ridx, row_label in enumerate(row_labels):
+            new_row = {"label": row_label, "cells": []}
+
+            # total cell
+            total_cell = base_table[key]["rows"][0]["cells"][ridx]
+            new_row["cells"].append(total_cell)
+
+            # each topbreak
+            for child in children_results:
+                child_summary = child.get(key)
+                if child_summary:
+                    child_cell = child_summary["rows"][0]["cells"][ridx]
+                    new_row["cells"].append(child_cell)
+                else:
+                    new_row["cells"].append({"count": 0, "pct": "0%"})
+
+            combined["rows"].append(new_row)
+
+        merged[key] = combined
+
+    return merged
+
+# ---------- Add Average Row to Summary ----------
+def add_average_or_total_row(summary, key_name):
+    """
+    - For Top/Bottom summaries → add an 'Average' row (average of pcts + average of counts).
+    - For Mean Summary → add a 'Total' row (overall mean across all respondents).
+    """
+    if not summary or "rows" not in summary:
+        return summary
+
+    cols = summary.get("columns", [])
+    rows = summary.get("rows", [])
+    if not rows:
+        return summary
+
+    if key_name == "Mean Summary":
+        # ✅ Add Total row for Mean Summary
+        total_cells = []
+        for ci in range(len(cols)):
+            val = rows[0]["cells"][ci].get("count")
+            total_cells.append({"count": val, "pct": None})
+        summary["rows"].insert(0, {"label": "Total", "cells": total_cells})
+
+    else:
+        # ✅ Average row for other summaries
+        avg_cells = []
+        for ci in range(len(cols)):
+            col_pcts, col_counts = [], []
+            for r in rows:
+                if ci < len(r["cells"]):
+                    cell = r["cells"][ci]
+                    if "pct" in cell and cell["pct"]:
+                        try:
+                            col_pcts.append(float(cell["pct"].replace("%", "")))
+                        except:
+                            pass
+                    if "count" in cell and cell["count"] not in (None, ""):
+                        col_counts.append(cell["count"])
+
+            avg_pct = f"{(sum(col_pcts)/len(col_pcts)):.1f}%" if col_pcts else "0%"
+            avg_count = round(sum(col_counts)/len(col_counts)) if col_counts else None
+            avg_cells.append({"count": avg_count, "pct": avg_pct})
+
+        # Insert at top always
+        summary["rows"].insert(0, {"label": "Average", "cells": avg_cells})
+
+    return summary
 
 
 # ---------- Single Choice ----------
@@ -332,22 +424,25 @@ def get_var_name_from_title(meta_df, title):
 # ---------- Single Response Grid ----------
 def crosstab_single_response_grid_with_topbreak(df, var_group, group_rows, meta, topbreak_title, meta_df):
     """
-    Return sub-tables split by topbreak, + summaries once at the bottom.
+    Return a dict with:
+      - "matrix": list of per-topbreak sub-tables
+      - merged summaries (Top Summary, Top2 Summary, etc.) across Total + topbreaks
     """
 
+    # fallback: if no valid topbreak given → behave like normal grid
     if not topbreak_title or topbreak_title not in meta_df["Table_Title"].astype(str).values:
         return crosstab_single_response_grid(df, var_group, group_rows, meta)
 
     results = []
 
+    # find the meta rows for the topbreak Table_Title
     top_rows = meta_df[meta_df["Table_Title"] == topbreak_title]
     if top_rows.empty:
         return crosstab_single_response_grid(df, var_group, group_rows, meta)
 
     tb_qtype = top_rows["Question_Type"].str.upper().iloc[0]
 
-    # --- Collect topbreak splits ---
-    matrix = []
+    # --- Case 1: SC / SR / NR topbreak
     if tb_qtype in ["SC", "SR", "NR"]:
         tb_var = str(top_rows.iloc[0]["Var_Name"]).strip()
         if tb_var not in df.columns:
@@ -361,41 +456,39 @@ def crosstab_single_response_grid_with_topbreak(df, var_group, group_rows, meta,
         for sv, slabel in zip(split_values, split_labels):
             tb_df = df[df[tb_var] == sv]
             sub_table = crosstab_single_response_grid(tb_df, var_group, group_rows, meta)
-            matrix.append({
+            results.append({
                 "topbreak_label": slabel,
-                "Matrix": sub_table["Matrix"],
+                **sub_table
             })
 
+    # --- Case 2: MR / SRG topbreak
     elif tb_qtype in ["MR", "SRG"]:
         for _, r in top_rows.iterrows():
             child_var = str(r["Var_Name"]).strip()
             child_label = r.get("Option_Text", r.get("Var_Label", child_var))
             if child_var not in df.columns:
                 continue
+
             tb_df = df[df[child_var] == 1]
             sub_table = crosstab_single_response_grid(tb_df, var_group, group_rows, meta)
-            matrix.append({
+            results.append({
                 "topbreak_label": child_label,
-                "Matrix": sub_table["Matrix"],
+                **sub_table
             })
 
     else:
+        # fallback
         return crosstab_single_response_grid(df, var_group, group_rows, meta)
 
-    # --- Add full summaries ONCE (using whole df) ---
-    base_table = crosstab_single_response_grid(df, var_group, group_rows, meta)
+    # ✅ Build merged summaries ONLY for topbreak mode
+    merged_summaries = build_topbreak_summaries(df, var_group, group_rows, meta, results)
 
-    result = {
-        "matrix": matrix,
-        "Top Summary": base_table.get("Top Summary"),
-        "Top2 Summary": base_table.get("Top2 Summary"),
-        "Bottom Summary": base_table.get("Bottom Summary"),
-        "Bottom2 Summary": base_table.get("Bottom2 Summary"),
-        "Middle Summary": base_table.get("Middle Summary"),
-        "Mean Summary": base_table.get("Mean Summary"),
+    return {
+        "matrix": results,          # per-topbreak crosstabs
+        **merged_summaries          # merged summaries across Total + all topbreaks
     }
 
-    return result
+
 
 
 
@@ -590,11 +683,7 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
     # --- scale detection ---
     scale_codes = sorted(value_labels.keys())
     scale_length = len(scale_codes)
-
-    if add_type == "rating":
-        ordered_codes = scale_codes
-    else:
-        ordered_codes = scale_codes
+    ordered_codes = scale_codes
 
     rows = []
 
@@ -659,6 +748,7 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
                 std_row["cells"].append({"count": 0})
         rows.extend([mean_row, median_row, std_row])
 
+    # ✅ merge "Others"
     rows = merge_others(rows, total_base, is_cells=True)
 
     result = {
@@ -691,7 +781,7 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
                 "rows": [build_summary(summary_label, codes)]
             }
 
-        # ✅ now each summary has cells per column (not collapsed)
+        # ✅ per-column summaries
         result["Top Summary"] = build_summary_table("Top Summary", [scale_codes[-1]])
         result["Top2 Summary"] = build_summary_table("Top2 Summary", scale_codes[-2:])
         result["Bottom Summary"] = build_summary_table("Bottom Summary", [scale_codes[0]])
@@ -700,7 +790,7 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
         if middle_code is not None:
             result["Middle Summary"] = build_summary_table("Middle Summary", [middle_code])
 
-        # Mean Summary (per column)
+        # ✅ Mean Summary (per column)
         mean_row = {"label": "Mean", "cells": []}
         for var_name, _ in attributes:
             series = attr_data[var_name]["series"]
@@ -711,7 +801,23 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
             "rows": [mean_row]
         }
 
+        # ✅ Apply average/total row adjustments
+        summary_keys = [
+            "Top Summary",
+            "Top2 Summary",
+            "Bottom Summary",
+            "Bottom2 Summary",
+            "Middle Summary",
+            "Mean Summary"
+        ]
+
+        for key in summary_keys:
+            if key in result and result[key]:
+                result[key] = add_average_or_total_row(result[key], key)
+                print("After adding average:", key, result[key]["rows"][0])  # DEBUG
+
     return result
+
 
 
 

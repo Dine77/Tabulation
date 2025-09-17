@@ -552,32 +552,15 @@ function CrosstabPage() {
     );
   };
 
-
-  const renderSummaryCard = (summaryObj, groupIdx, keyName) => {
+  // -------- Summary Renderers ----------
+  const renderSummaryCard = (summaryObj, groupIdx, keyName, isTopbreakMode) => {
     if (!summaryObj) return null;
     const tableKey = `g${groupIdx}_${keyName}`;
-    const cols = summaryObj.columns || []; // attributes
+    const cols = summaryObj.columns || [];
     const rows = summaryObj.rows || [];
 
-    // average calculation from first row values
-    let avgPct = 0;
-    let validCount = 0;
-    if (rows[0]?.cells) {
-      rows[0].cells.forEach((c) => {
-        if (c?.pct && c.pct !== "0%") {
-          avgPct += parseFloat(c.pct.replace("%", "")) || 0;
-          validCount++;
-        }
-      });
-    }
-    const avgPctStr =
-      validCount > 0 ? `${(avgPct / validCount).toFixed(1)}%` : "0%";
-
     return (
-      <div
-        className="bg-white border rounded-lg shadow p-4 mb-6"
-        key={tableKey}
-      >
+      <div className="bg-white border rounded-lg shadow p-4 mb-6" key={tableKey}>
         <div className="flex justify-between items-center mb-3">
           <div className="text-green-700 font-semibold">{keyName}</div>
           <button
@@ -587,48 +570,49 @@ function CrosstabPage() {
             Export
           </button>
         </div>
+
         <div className="overflow-x-auto">
           <table className="min-w-full border-collapse text-xs">
             <thead className="bg-gray-50">
               <tr>
-                <th className="border px-3 py-2 text-left bg-gray-100">
-                  Attribute
-                </th>
-                <th className="border px-3 py-2 text-center bg-gray-100">
-                  Qualified
-                </th>
+                <th className="border px-3 py-2 text-left bg-gray-100">Attribute</th>
+                <th className="border px-3 py-2 text-center bg-gray-100">Qualified</th>
               </tr>
             </thead>
             <tbody>
-              {/* --- Average row --- */}
-              <tr className="bg-gray-200 font-bold">
-                <td className="border px-3 py-2">Average</td>
-                <td className="border px-3 py-2 text-center">
-                  <span>{avgPctStr}</span>
-                </td>
-              </tr>
+              {/* ✅ First row → Summary with average */}
+              {rows.length > 0 && (
+                <tr className="bg-gray-200 font-bold">
+                  <td className="border px-3 py-2">{rows[0].label} (Average %)</td>
+                  <td className="border px-3 py-2 text-center">
+                    {/* compute avg across Row1..RowN */}
+                    {(() => {
+                      let sum = 0, count = 0;
+                      rows[0].cells.forEach((c) => {
+                        if (c?.pct) {
+                          sum += parseFloat(c.pct.replace("%", "")) || 0;
+                          count++;
+                        }
+                      });
+                      return count ? `${(sum / count).toFixed(1)}%` : "0%";
+                    })()}
+                  </td>
+                </tr>
+              )}
 
-              {/* --- Attribute rows --- */}
+              {/* ✅ Next rows → each attribute Row1/Row2/Row3 */}
               {cols.map((attrLabel, idx) => {
                 const cell = rows[0]?.cells?.[idx] || {};
-                const linkId = `matrix_${groupIdx}`;   // ✅ just group index, matches matrix card
                 return (
                   <tr
                     key={idx}
                     className={`${idx % 2 ? "bg-gray-50" : "bg-white"} hover:bg-yellow-50`}
                   >
-                    <td className="border px-3 py-2">
-                      <a
-                        href={`#${linkId}`}
-                        className="text-blue-600 hover:underline"
-                      >
-                        {attrLabel}
-                      </a>
-                    </td>
+                    <td className="border px-3 py-2">{attrLabel}</td>
                     <td className="border px-3 py-2 text-center">
                       <div className="flex flex-col items-center">
                         <span>{cell.pct || ""}</span>
-                        <span className="text-gray-500">{cell.count || ""}</span>
+                        <span className="text-gray-500">{cell.count ?? ""}</span>
                       </div>
                     </td>
                   </tr>
@@ -640,6 +624,78 @@ function CrosstabPage() {
       </div>
     );
   };
+
+
+
+  // Merged summary for new crosstab (multiple columns)
+  const renderMergedSummaryCard = (summaryObj, groupIdx, keyName) => {
+    if (!summaryObj) return null;
+
+    const cols = summaryObj.columns || [];
+    const rows = summaryObj.rows || [];
+
+    return (
+      <div
+        className="bg-white border rounded-lg shadow p-4 mb-6"
+        key={`g${groupIdx}_${keyName}`}
+      >
+        {/* ✅ Header without inline Average */}
+        <div className="flex justify-between items-center mb-3">
+          <div className="text-green-700 font-semibold">{keyName}</div>
+          <button
+            onClick={() => exportSummaryExcel(summaryObj, keyName)}
+            className="text-sm text-blue-600 hover:underline"
+          >
+            Export
+          </button>
+        </div>
+
+        {/* ✅ Table */}
+        <div className="overflow-x-auto">
+          <table className="min-w-full border-collapse text-xs">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="border px-3 py-2 text-left bg-gray-100">
+                  Attribute
+                </th>
+                {cols.map((c, ci) => (
+                  <th
+                    key={ci}
+                    className="border px-3 py-2 text-center bg-gray-100"
+                  >
+                    {c}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {[...rows].sort((a, b) => (a.label === "Average" ? -1 : b.label === "Average" ? 1 : 0))
+                .map((r, ri) => (
+                  <tr key={ri} className={`${ri % 2 ? "bg-gray-50" : "bg-white"} hover:bg-yellow-50`}>
+                    <td className="border px-3 py-2 font-semibold">{r.label}</td>
+                    {r.cells.map((cell, ci) => (
+                      <td key={ci} className="border px-3 py-2 text-center">
+                        <div className="flex flex-col items-center">
+                          {cell.pct && <span>{cell.pct}</span>}
+                          {cell.count !== null && cell.count !== undefined && (
+                            <span className="text-gray-500">{cell.count}</span>
+                          )}
+                        </div>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+
+
+
+
 
   // -------- Page render ----------
   return (
@@ -724,9 +780,7 @@ function CrosstabPage() {
       <div className="space-y-8">
         {groups.map((grp, gIdx) => {
           const payload = grp.data || {};
-          // 🔹 check both Matrix and matrix
-          const matrix = payload.Matrix || payload.matrix || payload.Grid || payload.Total || payload;
-
+          const matrix = payload.Matrix || payload.Total || payload;
           const summaryKeys = [
             "Top Summary",
             "Top2 Summary",
@@ -736,15 +790,26 @@ function CrosstabPage() {
             "Mean Summary",
           ];
 
+          // ✅ detect new crosstab with topbreak
+          const isTopbreakMode = Array.isArray(payload.matrix);
+
           return (
             <div key={gIdx}>
               {grp.add_type === "NPS"
                 ? renderNPSCard(payload.NPS, grp.question, `nps_${gIdx}`)
                 : renderMatrixCard(matrix, gIdx, `g${gIdx}`, grp.question)}
 
-              {summaryKeys.map((k) =>
-                payload[k] ? renderSummaryCard(payload[k], gIdx, k) : null
-              )}
+              {/* ✅ Quick Crosstab → simple summaries with hyperlinks */}
+              {!isTopbreakMode &&
+                summaryKeys.map((k) =>
+                  payload[k] ? renderSummaryCard(payload[k], gIdx, k, isTopbreakMode) : null
+                )}
+
+              {/* ✅ New Crosstab → merged summaries (multi-column) */}
+              {isTopbreakMode &&
+                summaryKeys.map((k) =>
+                  payload[k] ? renderMergedSummaryCard(payload[k], gIdx, k) : null
+                )}
             </div>
           );
         })}
