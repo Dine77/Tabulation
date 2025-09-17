@@ -1,0 +1,35 @@
+version: "3.9"
+
+services:
+  frontend:
+    build: ./frontend
+    container_name: react_app
+    ports:
+      - "80:80" # React on port 80
+    depends_on:
+      - api
+
+  api:
+    build: ./api
+    container_name: python_api
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGO_URI=mongodb://neuralnet:NNetBlr@mongodb:27017/myDatabase?authSource=admin
+    depends_on:
+      - mongodb
+
+  mongodb:
+    image: mongo:6
+    container_name: mongodb
+    restart: always
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=neuralnet
+      - MONGO_INITDB_ROOT_PASSWORD=NNetBlr
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+volumes:
+  mongo_data:
