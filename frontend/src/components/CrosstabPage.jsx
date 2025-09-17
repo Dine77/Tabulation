@@ -414,9 +414,9 @@ function CrosstabPage() {
                               key={ci}
                               onClick={() => handleSort(tableKey, ci)}
                               className={`border px-3 py-2 text-center cursor-pointer hover:bg-blue-50 min-w-[5vw] ${colSort.colIndex === ci &&
-                                  colSort.direction !== "none"
-                                  ? "text-blue-600 font-bold underline"
-                                  : "text-gray-800"
+                                colSort.direction !== "none"
+                                ? "text-blue-600 font-bold underline"
+                                : "text-gray-800"
                                 }`}
                             >
                               {typeof c === "object" ? (
@@ -496,9 +496,9 @@ function CrosstabPage() {
                       key={ci}
                       onClick={() => handleSort(tableKey, ci)}
                       className={`border px-3 py-2 text-center cursor-pointer hover:bg-blue-50 min-w-[5vw] ${colSort.colIndex === ci &&
-                          colSort.direction !== "none"
-                          ? "text-blue-600 font-bold underline"
-                          : "text-gray-800"
+                        colSort.direction !== "none"
+                        ? "text-blue-600 font-bold underline"
+                        : "text-gray-800"
                         }`}
                     >
                       {typeof c === "object" ? (
@@ -724,7 +724,9 @@ function CrosstabPage() {
       <div className="space-y-8">
         {groups.map((grp, gIdx) => {
           const payload = grp.data || {};
-          const matrix = payload.Matrix || payload.Total || payload;
+          // 🔹 check both Matrix and matrix
+          const matrix = payload.Matrix || payload.matrix || payload.Grid || payload.Total || payload;
+
           const summaryKeys = [
             "Top Summary",
             "Top2 Summary",
@@ -734,11 +736,10 @@ function CrosstabPage() {
             "Mean Summary",
           ];
 
-
           return (
             <div key={gIdx}>
               {grp.add_type === "NPS"
-                ? renderNPSCard(payload.NPS, grp.question, `nps_${gIdx}`)  // 🔹 custom renderer for NPS
+                ? renderNPSCard(payload.NPS, grp.question, `nps_${gIdx}`)
                 : renderMatrixCard(matrix, gIdx, `g${gIdx}`, grp.question)}
 
               {summaryKeys.map((k) =>

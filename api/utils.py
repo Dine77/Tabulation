@@ -332,24 +332,22 @@ def get_var_name_from_title(meta_df, title):
 # ---------- Single Response Grid ----------
 def crosstab_single_response_grid_with_topbreak(df, var_group, group_rows, meta, topbreak_title, meta_df):
     """
-    Return a list of sub-tables (one per topbreak option).
-    Each item: { "topbreak_label": ..., "Matrix": { ... } }
+    Return sub-tables split by topbreak, + summaries once at the bottom.
     """
 
-    # fallback to normal SRG if topbreak missing or not in meta_df
     if not topbreak_title or topbreak_title not in meta_df["Table_Title"].astype(str).values:
         return crosstab_single_response_grid(df, var_group, group_rows, meta)
 
     results = []
 
-    # find the meta rows for the topbreak Table_Title
     top_rows = meta_df[meta_df["Table_Title"] == topbreak_title]
     if top_rows.empty:
         return crosstab_single_response_grid(df, var_group, group_rows, meta)
 
     tb_qtype = top_rows["Question_Type"].str.upper().iloc[0]
 
-    # --- Case 1: SC / SR / NR topbreak
+    # --- Collect topbreak splits ---
+    matrix = []
     if tb_qtype in ["SC", "SR", "NR"]:
         tb_var = str(top_rows.iloc[0]["Var_Name"]).strip()
         if tb_var not in df.columns:
@@ -363,31 +361,42 @@ def crosstab_single_response_grid_with_topbreak(df, var_group, group_rows, meta,
         for sv, slabel in zip(split_values, split_labels):
             tb_df = df[df[tb_var] == sv]
             sub_table = crosstab_single_response_grid(tb_df, var_group, group_rows, meta)
-            results.append({
+            matrix.append({
                 "topbreak_label": slabel,
-                "Matrix": sub_table["Matrix"]
+                "Matrix": sub_table["Matrix"],
             })
 
-    # --- Case 2: MR / SRG topbreak
     elif tb_qtype in ["MR", "SRG"]:
         for _, r in top_rows.iterrows():
             child_var = str(r["Var_Name"]).strip()
             child_label = r.get("Option_Text", r.get("Var_Label", child_var))
             if child_var not in df.columns:
                 continue
-
             tb_df = df[df[child_var] == 1]
             sub_table = crosstab_single_response_grid(tb_df, var_group, group_rows, meta)
-            results.append({
+            matrix.append({
                 "topbreak_label": child_label,
-                "Matrix": sub_table["Matrix"]
+                "Matrix": sub_table["Matrix"],
             })
 
     else:
-        # fallback
         return crosstab_single_response_grid(df, var_group, group_rows, meta)
 
-    return results
+    # --- Add full summaries ONCE (using whole df) ---
+    base_table = crosstab_single_response_grid(df, var_group, group_rows, meta)
+
+    result = {
+        "matrix": matrix,
+        "Top Summary": base_table.get("Top Summary"),
+        "Top2 Summary": base_table.get("Top2 Summary"),
+        "Bottom Summary": base_table.get("Bottom Summary"),
+        "Bottom2 Summary": base_table.get("Bottom2 Summary"),
+        "Middle Summary": base_table.get("Middle Summary"),
+        "Mean Summary": base_table.get("Mean Summary"),
+    }
+
+    return result
+
 
 
 
@@ -583,9 +592,9 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
     scale_length = len(scale_codes)
 
     if add_type == "rating":
-        ordered_codes = scale_codes  # show low→high
-    else:  # ranking/categorical
-        ordered_codes = scale_codes  # keep ascending
+        ordered_codes = scale_codes
+    else:
+        ordered_codes = scale_codes
 
     rows = []
 
@@ -597,7 +606,6 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
     rows.append(total_row)
 
     if add_type == "rating":
-        # --- dynamic bottomN ---
         bottom_n = 2 if scale_length <= 5 else 3
         bottom_codes = scale_codes[:bottom_n]
         bottom_row = {"label": f"Bottom {bottom_n}", "cells": []}
@@ -622,7 +630,6 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
         rows.append({"label": label, "cells": row_cells})
 
     if add_type == "rating":
-        # --- dynamic topN ---
         top_n = 2 if scale_length <= 5 else 3
         top_codes = scale_codes[-top_n:]
         top_row = {"label": f"Top {top_n}", "cells": []}
@@ -652,10 +659,8 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
                 std_row["cells"].append({"count": 0})
         rows.extend([mean_row, median_row, std_row])
 
-    # ✅ merge "Others"
     rows = merge_others(rows, total_base, is_cells=True)
 
-    # --- build output ---
     result = {
         "Matrix": {
             "base": total_base,
@@ -677,25 +682,25 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
                 count = sum(int(counts.get(c, 0)) for c in codes)
                 pct = f"{round((count/base)*100,1)}%" if base > 0 else "0%"
                 row["cells"].append({"count": count, "pct": pct})
+            return row
+
+        def build_summary_table(summary_label, codes):
             return {
                 "base": total_base,
                 "columns": [label for _, label in attributes],
-                "rows": [row]
+                "rows": [build_summary(summary_label, codes)]
             }
 
-        # Top / Top2
-        result["Top Summary"] = build_summary("Top Summary", [scale_codes[-1]])
-        result["Top2 Summary"] = build_summary("Top2 Summary", scale_codes[-2:])
+        # ✅ now each summary has cells per column (not collapsed)
+        result["Top Summary"] = build_summary_table("Top Summary", [scale_codes[-1]])
+        result["Top2 Summary"] = build_summary_table("Top2 Summary", scale_codes[-2:])
+        result["Bottom Summary"] = build_summary_table("Bottom Summary", [scale_codes[0]])
+        result["Bottom2 Summary"] = build_summary_table("Bottom2 Summary", scale_codes[:2])
 
-        # Bottom / Bottom2
-        result["Bottom Summary"] = build_summary("Bottom Summary", [scale_codes[0]])
-        result["Bottom2 Summary"] = build_summary("Bottom2 Summary", scale_codes[:2])
-
-        # Middle (only for odd scale length like 5, 7, 11...)
         if middle_code is not None:
-            result["Middle Summary"] = build_summary("Middle Summary", [middle_code])
+            result["Middle Summary"] = build_summary_table("Middle Summary", [middle_code])
 
-        # Mean summary
+        # Mean Summary (per column)
         mean_row = {"label": "Mean", "cells": []}
         for var_name, _ in attributes:
             series = attr_data[var_name]["series"]
@@ -707,6 +712,7 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
         }
 
     return result
+
 
 
 # --- Load Project Meta ---
