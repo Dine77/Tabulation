@@ -1,35 +1,48 @@
 version: "3.9"
 
 services:
-  frontend:
-    build: ./frontend
-    container_name: react_app
-    ports:
-      - "80:80"
-    depends_on:
-      - api
-
-  api:
-    build: ./api
-    container_name: python_api
+  backend:
+    image: dineshrajannds/backend:v1.0
+    restart: always
     ports:
       - "8000:8000"
     environment:
-      - MONGO_URI=mongodb://neuralnet:NNetBlr@mongodb:27017/myDatabase?authSource=admin
+      - ENV=${ENV}
+      - MONGO_URI=${MONGO_URI}
     depends_on:
-      - mongodb
+      - db
 
-  mongodb:
+  api:
+    image: dineshrajannds/api:v1.0
+    restart: always
+    ports:
+      - "8001:8001"
+    environment:
+      - ENV=${ENV}
+      - MONGO_URI=${MONGO_URI}
+    depends_on:
+      - db
+
+  frontend:
+    image: dineshrajannds/frontend:v1.0
+    restart: always
+    ports:
+      - "80:80"
+
+  db:
     image: mongo:6
-    container_name: mongodb
     restart: always
     environment:
-      - MONGO_INITDB_ROOT_USERNAME=neuralnet
-      - MONGO_INITDB_ROOT_PASSWORD=NNetBlr
-    ports:
-      - "27017:27017"
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE}
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test: [ "CMD", "mongosh", "--username", "${MONGO_INITDB_ROOT_USERNAME}", "--password", "${MONGO_INITDB_ROOT_PASSWORD}", "--authenticationDatabase=admin", "--eval", "db.adminCommand('ping')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   mongo_data:
