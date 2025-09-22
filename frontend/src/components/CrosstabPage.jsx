@@ -372,80 +372,55 @@ function CrosstabPage() {
 
 
   // -------- Renderers ----------
+  // Case 1: backend sends multiple sub-tables (when topbreak is applied)
   const renderMatrixCard = (matrixObj, groupIdx, tableKeyBase, question) => {
     if (!matrixObj) return null;
 
-    // Case 1: backend sends multiple sub-tables (when topbreak is applied)
+    // 🔹 Case 1: SRG → array of topbreaks
     if (Array.isArray(matrixObj)) {
       return (
-        <div
-          id={`matrix_${groupIdx}`}
-          className="bg-white border rounded-lg shadow p-4 mb-6"
-        >
+        <div id={`matrix_${groupIdx}`} className="bg-white border rounded-lg shadow p-4 mb-6">
           <div className="flex justify-between items-center mb-3">
             <div className="text-green-700 font-semibold">{question}</div>
             <button className="text-sm text-blue-600 hover:underline">Export</button>
           </div>
 
           {matrixObj.map((sub, si) => {
+            const matrix = sub.Matrix;
+            if (!matrix) return null;
+
             const tableKey = `${tableKeyBase}_sub${si}`;
-            const matrix = sub.Matrix || {};
-            const cols = matrix.columns || ["Qualified"];
+
+            // normalize columns
+            const cols = (matrix.columns || []).map((c) =>
+              typeof c === "string" ? { label: c, letter: "" } : c
+            );
+
             const rows = getSortedRows(matrix, tableKey);
 
             return (
               <div key={si} className="mb-6">
-                {/* 🔹 Sub-header (topbreak label) */}
-                <div className="text-blue-600 font-bold mb-2">
-                  {sub.topbreak_label}
-                </div>
+                <div className="text-blue-600 font-bold mb-2">{sub.topbreak_label}</div>
 
                 <div className="overflow-x-auto">
                   <table className="min-w-full border-collapse text-xs">
                     <thead className="bg-gray-100">
                       <tr>
-                        <th className="border px-3 py-2 text-left bg-gray-200 min-w-[10vw]">
-                          Scale
-                        </th>
-                        {cols.map((c, ci) => {
-                          const colSort = sortConfigs[tableKey] || {};
-                          return (
-                            <th
-                              key={ci}
-                              onClick={() => handleSort(tableKey, ci)}
-                              className={`border px-3 py-2 text-center cursor-pointer hover:bg-blue-50 min-w-[5vw] ${colSort.colIndex === ci &&
-                                colSort.direction !== "none"
-                                ? "text-blue-600 font-bold underline"
-                                : "text-gray-800"
-                                }`}
-                            >
-                              {typeof c === "object" ? (
-                                <>
-                                  {c.letter && (
-                                    <span className="text-blue-600 font-bold mr-1">
-                                      {c.letter}
-                                    </span>
-                                  )}
-                                  {c.label}
-                                </>
-                              ) : (
-                                c
-                              )}
-                            </th>
-                          );
-                        })}
+                        <th className="border px-3 py-2 text-left bg-gray-200">Scale</th>
+                        {cols.map((c, ci) => (
+                          <th key={ci} className="border px-3 py-2 text-center">
+                            {c.letter && (
+                              <span className="text-blue-600 font-bold mr-1">{c.letter}</span>
+                            )}
+                            {c.label}
+                          </th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
                       {rows.map((r, ri) => (
-                        <tr
-                          key={ri}
-                          className={`${ri % 2 ? "bg-gray-50" : "bg-white"
-                            } hover:bg-yellow-50`}
-                        >
-                          <td className="border px-3 py-2 font-semibold">
-                            {r.label}
-                          </td>
+                        <tr key={ri} className={ri % 2 ? "bg-gray-50" : "bg-white"}>
+                          <td className="border px-3 py-2 font-semibold">{r.label}</td>
                           {r.cells?.map((cell, ci) => (
                             <td key={ci} className="border px-3 py-2 text-center">
                               <div className="flex flex-col items-center">
@@ -466,83 +441,50 @@ function CrosstabPage() {
       );
     }
 
-    // Case 2: fallback → normal single matrix table
+    // 🔹 Case 2: Normal → single object
     const tableKey = `${tableKeyBase}_Matrix`;
-    const cols = matrixObj.columns || ["Qualified"];
+
+    // normalize columns (string → object)
+    const cols = (matrixObj.columns || []).map((c) =>
+      typeof c === "string" ? { label: c, letter: "" } : c
+    );
+
     const rows = getSortedRows(matrixObj, tableKey);
 
     return (
-      <div
-        id={`matrix_${groupIdx}`}
-        className="bg-white border rounded-lg shadow p-4 mb-6"
-        key={tableKey}
-      >
+      <div id={`matrix_${groupIdx}`} className="bg-white border rounded-lg shadow p-4 mb-6">
         <div className="flex justify-between items-center mb-3">
           <div className="text-green-700 font-semibold">{question}</div>
           <button className="text-sm text-blue-600 hover:underline">Export</button>
         </div>
+
         <div className="overflow-x-auto">
           <table className="min-w-full border-collapse text-xs">
             <thead className="bg-gray-100">
               <tr>
-                <th className="border px-3 py-2 text-left bg-gray-200 min-w-[10vw]">
-                  Scale
-                </th>
-                {cols.map((c, ci) => {
-                  const colSort = sortConfigs[tableKey] || {};
-
-                  return (
-                    <th
-                      key={ci}
-                      onClick={() => handleSort(tableKey, ci)}
-                      className={`border px-3 py-2 text-center cursor-pointer hover:bg-blue-50 min-w-[5vw] ${colSort.colIndex === ci &&
-                        colSort.direction !== "none"
-                        ? "text-blue-600 font-bold underline"
-                        : "text-gray-800"
-                        }`}
-                    >
-                      {typeof c === "object" ? (
-                        <>
-                          {c.letter && (
-                            <span className="text-blue-600 font-bold mr-1">
-                              {c.letter}
-                            </span>
-                          )}
-                          {c.label}
-                        </>
-                      ) : (
-                        c
-                      )}
-                    </th>
-                  );
-                })}
+                <th className="border px-3 py-2 text-left bg-gray-200">Scale</th>
+                {cols.map((c, ci) => (
+                  <th key={ci} className="border px-3 py-2 text-center">
+                    {c.letter && (
+                      <span className="text-blue-600 font-bold mr-1">{c.letter}</span>
+                    )}
+                    {c.label}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {rows.map((r, ri) => (
-                <tr
-                  key={ri}
-                  className={`${ri % 2 ? "bg-gray-50" : "bg-white"
-                    } hover:bg-yellow-50`}
-                >
+                <tr key={ri} className={ri % 2 ? "bg-gray-50" : "bg-white"}>
                   <td className="border px-3 py-2 font-semibold">{r.label}</td>
-                  {r.cells ? (
-                    r.cells.map((cell, ci) => (
-                      <td key={ci} className="border px-3 py-2 text-center">
-                        <div className="flex flex-col items-center">
-                          <span>{cell.pct}</span>
-                          <span className="text-gray-500">{cell.count}</span>
-                        </div>
-                      </td>
-                    ))
-                  ) : (
-                    <td className="border px-3 py-2 text-center">
+                  {r.cells?.map((cell, ci) => (
+                    <td key={ci} className="border px-3 py-2 text-center">
                       <div className="flex flex-col items-center">
-                        <span>{r.pct}</span>
-                        <span className="text-gray-500">{r.count}</span>
+                        <span>{cell.pct}</span>
+                        <span className="text-gray-500">{cell.count}</span>
                       </div>
                     </td>
-                  )}
+                  ))}
                 </tr>
               ))}
             </tbody>
@@ -551,6 +493,110 @@ function CrosstabPage() {
       </div>
     );
   };
+
+  // -------- Quick Crosstab Renderers ----------
+  const renderQuickCrosstabCard = (qcObj, groupIdx, tableKeyBase, question, type) => {
+    if (!qcObj) return null;
+
+    // 🔹 Case 1: SRG in Quick Crosstab
+    if (type === "SRG" && qcObj.Matrix) {
+      const matrix = qcObj.Matrix;
+      const cols = (matrix.columns || []).map((c) =>
+        typeof c === "string" ? { label: c, letter: "" } : c
+      );
+
+      return (
+        <div
+          id={`qc_${groupIdx}`}
+          className="bg-white border rounded-lg shadow p-4 mb-6"
+        >
+          <div className="flex justify-between items-center mb-3">
+            <div className="text-green-700 font-semibold">{question}</div>
+            <button className="text-sm text-blue-600 hover:underline">Export</button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full border-collapse text-xs">
+              <thead className="bg-gray-100">
+                <tr>
+                  <th className="border px-3 py-2 text-left bg-gray-200">Scale</th>
+                  {cols.map((c, ci) => (
+                    <th key={ci} className="border px-3 py-2 text-center">
+                      {c.letter && (
+                        <span className="text-blue-600 font-bold mr-1">
+                          {c.letter}
+                        </span>
+                      )}
+                      {c.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {matrix.rows.map((r, ri) => (
+                  <tr key={ri} className={ri % 2 ? "bg-gray-50" : "bg-white"}>
+                    <td className="border px-3 py-2 font-semibold">{r.label}</td>
+                    {r.cells.map((cell, ci) => (
+                      <td key={ci} className="border px-3 py-2 text-center">
+                        <div className="flex flex-col items-center">
+                          <span>{cell.pct ?? ""}</span>
+                          <span className="text-gray-500">{cell.count}</span>
+                        </div>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    // 🔹 Case 2: SC / MR / NR in Quick Crosstab
+    if (type === "SC" || type === "MR" || type === "NR") {
+      const rows = qcObj.rows || [];
+      return (
+        <div
+          id={`qc_${groupIdx}`}
+          className="bg-white border rounded-lg shadow p-4 mb-6"
+        >
+          <div className="flex justify-between items-center mb-3">
+            <div className="text-green-700 font-semibold">{question}</div>
+            <button className="text-sm text-blue-600 hover:underline">Export</button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full border-collapse text-xs">
+              <thead className="bg-gray-100">
+                <tr>
+                  <th className="border px-3 py-2 text-left bg-gray-200"></th>
+                  <th className="border px-3 py-2 text-center">Qualified</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, ri) => (
+                  <tr key={ri} className={ri % 2 ? "bg-gray-50" : "bg-white"}>
+                    <td className="border px-3 py-2 font-semibold">{r.label}</td>
+                    <td className="border px-3 py-2 text-center">
+                      <div className="flex flex-col items-center">
+                        <span>{r.pct}</span>
+                        <span className="text-gray-500">{r.count}</span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+
 
   // -------- Summary Renderers ----------
   const renderSummaryCard = (summaryObj, groupIdx, keyName, isTopbreakMode) => {
@@ -793,25 +839,52 @@ function CrosstabPage() {
           // ✅ detect new crosstab with topbreak
           const isTopbreakMode = Array.isArray(payload.matrix);
 
+          let card;
+
+          if (grp.add_type === "NPS") {
+            card = renderNPSCard(payload.NPS, grp.question, `nps_${gIdx}`);
+          }
+          else if (grp.type === "SRG" && grp.crosstab_type === "new") {
+            // pass the *array* of matrices for SRG
+            card = renderMatrixCard(grp.data.matrix, gIdx, `srg_${gIdx}`, grp.question);
+          }
+          else if (grp.type !== "SRG" && grp.crosstab_type === "new") {
+            // pass the *object* matrix for normal questions
+            card = renderMatrixCard(grp.data, gIdx, `matrix_${gIdx}`, grp.question);
+          }
+          else if (grp.type === "SRG" && grp.data.Matrix) {
+            // Quick Crosstab SRG
+            card = renderQuickCrosstabCard(grp.data, gIdx, `qc_${gIdx}`, grp.question, "SRG");
+          }
+          else if (grp.type === "SC" || grp.type === "MR" || grp.type === "NR") {
+            // Quick Crosstab SC/MR/NR
+            const total = grp.data.Total;
+            card = renderQuickCrosstabCard(total, gIdx, `qc_${gIdx}`, grp.question, grp.type);
+          }
+          else {
+            // Normal (matrix with rows[].cells)
+            card = renderMatrixCard(grp.data, gIdx, `matrix_${gIdx}`, grp.question);
+          }
+
+
           return (
             <div key={gIdx}>
-              {grp.add_type === "NPS"
-                ? renderNPSCard(payload.NPS, grp.question, `nps_${gIdx}`)
-                : renderMatrixCard(matrix, gIdx, `g${gIdx}`, grp.question)}
+              {card}
 
-              {/* ✅ Quick Crosstab → simple summaries with hyperlinks */}
+              {/* ✅ Quick Crosstab */}
               {!isTopbreakMode &&
                 summaryKeys.map((k) =>
                   payload[k] ? renderSummaryCard(payload[k], gIdx, k, isTopbreakMode) : null
                 )}
 
-              {/* ✅ New Crosstab → merged summaries (multi-column) */}
+              {/* ✅ New Crosstab */}
               {isTopbreakMode &&
                 summaryKeys.map((k) =>
                   payload[k] ? renderMergedSummaryCard(payload[k], gIdx, k) : null
                 )}
             </div>
           );
+
         })}
       </div>
     </div>

@@ -461,7 +461,8 @@ def new_crosstab(request, project_id):
             "question": table_title,
             "var_name": var_name,
             "type": "SC",
-            "data": table_data
+            "data": table_data,
+            "crosstab_type":"new"
         })
 
     # --- Multi Response ---
@@ -481,7 +482,8 @@ def new_crosstab(request, project_id):
             "question": table_title,
             "var_group": grp,
             "type": "MR",
-            "data": table_data
+            "data": table_data,
+            "crosstab_type":"new"
         })
 
     # --- Numeric ---
@@ -499,7 +501,8 @@ def new_crosstab(request, project_id):
             "question": table_title,
             "var_name": var_name,
             "type": "NR",
-            "data": table_data
+            "data": table_data,
+            "crosstab_type":"new"
         })
 
     # --- Open Ended ---
@@ -537,7 +540,8 @@ def new_crosstab(request, project_id):
             "question": table_title,
             "var_group": grp,
             "type": "SRG",
-            "data": table_data
+            "data": table_data,
+            "crosstab_type":"new"
         })
 
     return Response(output)

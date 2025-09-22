@@ -337,7 +337,13 @@ def crosstab_single_choice_with_topbreak(df, var_name, value_labels, topbreak_ti
     rows = []
 
     for code, label in value_labels.items():
-        row_data = {"label": f"[{code}] {label}", "cells": []}
+        # format code → remove ".0" if it's integer
+        if isinstance(code, (int, float)) and code == int(code):
+            code_str = str(int(code))
+        else:
+            code_str = str(code)
+
+        row_data = {"label": f"[{code_str}] {label}", "cells": []}
         for col_name, sub_df in cols:
             base = sub_df[var_name].notna().sum()
             count = (sub_df[var_name] == code).sum()
@@ -346,6 +352,7 @@ def crosstab_single_choice_with_topbreak(df, var_name, value_labels, topbreak_ti
         rows.append(row_data)
 
     return {"columns": columns, "rows": rows}
+
 
 
 
