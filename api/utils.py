@@ -10,7 +10,9 @@ import os
 import pandas as pd
 from django.conf import settings
 from .models import Project
-
+import math
+from scipy.stats import norm
+import numpy as np
 
 def log_activity(user, action, project_name="", file_name="", details=""):
     ActivityLog(
@@ -21,6 +23,82 @@ def log_activity(user, action, project_name="", file_name="", details=""):
         details=details,
         timestamp=datetime.utcnow()
     ).save()
+
+Z_CRITICAL = {
+    80: 1.28,
+    85: 1.44,
+    90: 1.64,
+    95: 1.96,
+    99: 2.58,
+}
+
+def ztest_proportions(count1, base1, count2, base2, alpha=0.1):
+    print("Col bases:", base1, base2)
+    if base1 < 30 or base2 < 30:
+        return False
+
+    p1, p2 = count1 / base1, count2 / base2
+    p = (count1 + count2) / (base1 + base2)  # pooled
+
+    se = math.sqrt(p * (1 - p) * (1/base1 + 1/base2))
+    if se == 0:
+        return False
+
+    z = (p1 - p2) / se
+    p_value = 2 * (1 - norm.cdf(abs(z)))
+    # Debug log
+    print(f"Z={z:.2f}, p={p_value:.3f}, alpha={alpha}")
+    return p_value < alpha
+# ---------- Significance Test ----------
+def run_sig_test(p_count, p_base, c_count, c_base, z_threshold=1.96):
+    """Return sig flag 'UP' or 'DOWN' based on Decipher Z-test."""
+    if p_base <= 0 or c_base <= 0:
+        return None
+    
+    p_score = p_count / p_base
+    c_score = c_count / c_base
+    
+    if p_score == 0 and c_score == 0:
+        return None
+    
+    pq = (p_count + c_count) / (p_base + c_base)
+    q = 1 - pq
+    
+    se = np.sqrt(pq * q * ((1/p_base) + (1/c_base)))
+    if se == 0:
+        return None
+    
+    z = (c_score - p_score) / se
+    
+    if z >= z_threshold:
+        return "UP"    # significantly higher
+    elif z <= -z_threshold:
+        return "DOWN"  # significantly lower
+    return None
+
+# ---------- Apply Sig Test to Table ----------
+def apply_sig_tests_to_table(cols, rows, alpha=0.95):
+    """
+    Apply sig test to all pairs of columns except Total (col A).
+    Each cell in rows will get a 'sig' key with UP/DOWN/None.
+    """
+    z_threshold = norm.ppf(alpha)  # e.g. 1.64 for 90%, 1.96 for 95%
+
+    for i in range(1, len(cols)):   # 🔹 start from 1 → skip Total
+        base_i = cols[i][1].shape[0]
+
+        for j in range(i+1, len(cols)):
+            base_j = cols[j][1].shape[0]
+
+            for r in rows:
+                ci = r["cells"][i]
+                cj = r["cells"][j]
+
+                sig = run_sig_test(ci["count"], base_i, cj["count"], base_j, z_threshold)
+                if sig == "UP":
+                    ci["sig"] = chr(65 + j)   # mark against col letter
+                elif sig == "DOWN":
+                    cj["sig"] = chr(65 + i)
 
 
 # --- Common Helper for Merging "Others" ---
@@ -182,7 +260,7 @@ def build_topbreak(df, meta_df, topbreak_title, meta):
     Handles SC/NR normally, expands MR/SRG into multiple columns.
     """
     if not topbreak_title:
-        return [("Total", df)], [{"label": "Total", "letter": ""}]
+        return [("Total", df)], [{"label": "Total", "letter": "A"}]
 
     # get rows for this title
     rows = meta_df[meta_df["Table_Title"] == topbreak_title]
@@ -193,18 +271,17 @@ def build_topbreak(df, meta_df, topbreak_title, meta):
         rows = meta_df[meta_df["Var_Grp"] == grp]
 
     if rows.empty:
-        return [("Total", df)], [{"label": "Total", "letter": ""}]
+        return [("Total", df)], [{"label": "Total", "letter": "A"}]
 
     qtype = rows["Question_Type"].str.upper().iloc[0]
 
     cols = [("Total", df)]
-    columns = [{"label": "Total", "letter": ""}]
 
     # --- Case 1: SC / SR / NR ---
     if qtype in ["SC", "SR", "NR"]:
         var_name = str(rows.iloc[0]["Var_Name"]).strip()
         if var_name not in df.columns:
-            return cols, columns
+            return cols, [{"label": "Total", "letter": "A"}]
 
         for tb_value, tb_df in df.groupby(var_name):
             label = str(tb_value)
@@ -212,16 +289,19 @@ def build_topbreak(df, meta_df, topbreak_title, meta):
                 label = meta.variable_value_labels[var_name].get(tb_value, tb_value)
             cols.append((label, tb_df))
 
-        letters = get_topbreak_letters(len(cols) - 1)
-        for i, (col_name, _) in enumerate(cols[1:]):
-            columns.append({"label": col_name, "letter": letters[i]})
+        # generate letters for ALL columns including Total
+        letters = get_topbreak_letters(len(cols))
+        columns = [{"label": col_name, "letter": letters[i]} for i, (col_name, _) in enumerate(cols)]
 
         return cols, columns
 
     # --- Case 2: MR / SRG ---
     elif qtype in ["MR", "SRG"]:
         group_rows = meta_df[meta_df["Var_Grp"] == rows.iloc[0]["Var_Grp"]]
-        letters = get_topbreak_letters(len(group_rows))
+        cols = [("Total", df)]
+        letters = get_topbreak_letters(len(group_rows) + 1)  # +1 for Total
+
+        columns = [{"label": "Total", "letter": letters[0]}]
 
         for i, (_, row) in enumerate(group_rows.iterrows()):
             var = str(row["Var_Name"]).strip()
@@ -231,11 +311,12 @@ def build_topbreak(df, meta_df, topbreak_title, meta):
 
             sub_df = df[df[var] == 1]  # respondents who selected this option
             cols.append((label, sub_df))
-            columns.append({"label": label, "letter": letters[i]})
+            columns.append({"label": label, "letter": letters[i + 1]})
 
         return cols, columns
 
-    return cols, columns
+    return cols, [{"label": "Total", "letter": "A"}]
+
 
 def build_topbreak_summaries(df, var_group, group_rows, meta, children_results):
     base_table = crosstab_single_response_grid(df, var_group, group_rows, meta)
@@ -330,51 +411,104 @@ def add_average_or_total_row(summary, key_name):
     return summary
 
 
-# ---------- Single Choice ----------
-def crosstab_single_choice_with_topbreak(df, var_name, value_labels, topbreak_title, meta, meta_df):
-    # build cols and column headers using Table_Title
+# ---------- Single Choice topbreak----------
+def crosstab_single_choice_with_topbreak(
+    df, var_name, value_labels, topbreak_title, meta, meta_df, sig_level=95
+):
     cols, columns = build_topbreak(df, meta_df, topbreak_title, meta)
     rows = []
 
-    for code, label in value_labels.items():
-        # format code → remove ".0" if it's integer
-        if isinstance(code, (int, float)) and code == int(code):
-            code_str = str(int(code))
-        else:
-            code_str = str(code)
+    # Column letters (A, B, C…)
+    col_letters = [c.get("letter") if isinstance(c, dict) else chr(65+i) for i, c in enumerate(columns)]
 
-        row_data = {"label": f"[{code_str}] {label}", "cells": []}
+    thresholds = {80: 1.28, 90: 1.64, 95: 1.96, 99: 2.58}
+    z_threshold = thresholds.get(sig_level, 1.96)
+
+    for code, label in value_labels.items():
+        row_data = {"label": f"[{code}] {label}", "cells": []}
+        col_stats = []
+
         for col_name, sub_df in cols:
             base = sub_df[var_name].notna().sum()
             count = (sub_df[var_name] == code).sum()
             pct = f"{round((count / base * 100) if base > 0 else 0, 1)}%" if base > 0 else "0%"
+
+            col_stats.append((count, base))
             row_data["cells"].append({"count": int(count), "pct": pct})
+
+        # 🔹 Run sig test pairwise (skip Total = A at index 0)
+        for i in range(1, len(row_data["cells"])):        # start from B
+            for j in range(i + 1, len(row_data["cells"])):
+                p_count, p_base = col_stats[i]
+                c_count, c_base = col_stats[j]
+                sig = run_sig_test(p_count, p_base, c_count, c_base, z_threshold)
+
+                if sig == "UP":
+                    row_data["cells"][j].setdefault("sig", []).append(col_letters[i])
+                elif sig == "DOWN":
+                    row_data["cells"][i].setdefault("sig", []).append(col_letters[j])
+
+        # Convert sig list → string "B C"
+        for c in row_data["cells"]:
+            if "sig" in c:
+                c["sig"] = " ".join(c["sig"])
+
         rows.append(row_data)
 
     return {"columns": columns, "rows": rows}
 
-
-
-
 # ---------- Multi Response ----------
-def crosstab_multi_response_with_topbreak(df, var_group, group_rows, meta, topbreak_title, meta_df):
+def crosstab_multi_response_with_topbreak(
+    df, var_group, group_rows, meta, topbreak_title, meta_df, sig_level=95
+):
     cols, columns = build_topbreak(df, meta_df, topbreak_title, meta)
     rows = []
+
+    # Letters for columns (A = Total, but we’ll skip it in sig tests)
+    col_letters = [c.get("letter") if isinstance(c, dict) else chr(65+i) for i, c in enumerate(columns)]
+
+    thresholds = {80: 1.28, 90: 1.64, 95: 1.96, 99: 2.58}
+    z_threshold = thresholds.get(sig_level, 1.96)
 
     for _, row in group_rows.iterrows():
         var = row["Var_Name"]
         label_col = "Option_Text" if "Option_Text" in row.index else "Var_Label"
         label = row[label_col]
         row_data = {"label": label, "cells": []}
+        col_stats = []
 
+        # Build cells (include Total in display, but skip in sig test later)
         for col_name, sub_df in cols:
-            base = sub_df[var].notna().sum() if var in sub_df else 0
-            count = sub_df[var].sum() if var in sub_df else 0
+            if var not in sub_df:
+                base, count = 0, 0
+            else:
+                base = sub_df[var].notna().sum()
+                count = sub_df[var].sum()
             pct = f"{round((count / base * 100) if base > 0 else 0, 1)}%" if base > 0 else "0%"
+            col_stats.append((count, base))
             row_data["cells"].append({"count": int(count), "pct": pct})
+
+        # 🔹 Sig tests (skip index 0 → Total)
+        for i in range(1, len(row_data["cells"])):
+            for j in range(i + 1, len(row_data["cells"])):
+                p_count, p_base = col_stats[i]
+                c_count, c_base = col_stats[j]
+                sig = run_sig_test(p_count, p_base, c_count, c_base, z_threshold)
+
+                if sig == "UP":
+                    row_data["cells"][j].setdefault("sig", []).append(col_letters[i])
+                elif sig == "DOWN":
+                    row_data["cells"][i].setdefault("sig", []).append(col_letters[j])
+
+        # Convert sig list → "B C" etc
+        for c in row_data["cells"]:
+            if "sig" in c:
+                c["sig"] = "".join(c["sig"])
+
         rows.append(row_data)
 
     return {"columns": columns, "rows": rows}
+
 
 
 
@@ -826,8 +960,6 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
         for key in summary_keys:
             if key in result and result[key]:
                 result[key] = add_average_or_total_row(result[key], key)
-                print("After adding average:", key, result[key]["rows"][0])  # DEBUG
-
     return result
 
 

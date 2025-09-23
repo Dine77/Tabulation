@@ -431,6 +431,7 @@ def get_var_name_from_title(meta_df, table_title):
 @api_view(["GET"])
 def new_crosstab(request, project_id):
     topbreak_title = request.GET.get("topbreak")   # user-selected Table_Title
+    sig_level = int(request.GET.get("sig", 95))  # default 95%
     project = Project.objects(id=project_id).first()
     if not project:
         return Response({"error": "Project not found"}, status=404)
@@ -452,8 +453,7 @@ def new_crosstab(request, project_id):
 
         if topbreak_title:
             table_data = crosstab_single_choice_with_topbreak(
-                df, var_name, value_labels, topbreak_title, meta, meta_df
-            )
+                df, var_name, value_labels, topbreak_title, meta, meta_df, sig_level=sig_level)
         else:
             table_data = crosstab_single_choice(df, var_name, value_labels)
 
@@ -473,7 +473,7 @@ def new_crosstab(request, project_id):
 
         if topbreak_title:
             table_data = crosstab_multi_response_with_topbreak(
-                df, grp, group_rows, meta, topbreak_title, meta_df
+                df, grp, group_rows, meta, topbreak_title, meta_df, sig_level=sig_level
             )
         else:
             table_data = crosstab_multi_response(df, grp, group_rows, meta)

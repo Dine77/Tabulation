@@ -66,11 +66,13 @@ function CrosstabPage() {
   const [showNewModal, setShowNewModal] = useState(false);
   const [topbreaks, setTopbreaks] = useState([]);
   const [selectedTopbreak, setSelectedTopbreak] = useState("");
+  const [sigLevel, setSigLevel] = useState("");
+
   const API_BASE = import.meta.env.VITE_API_URL;
 
   useEffect(() => {
     if (showNewModal) {
-      fetch(`https://apicrosstab.nnet-dataviz.com/api/projects/${id}/meta_titles/`)
+      fetch(`http://127.0.0.1:8000/api/projects/${id}/meta_titles/`)
         .then((res) => res.json())
         .then((data) => {
           setTopbreaks(data); // ✅ fills dropdown
@@ -80,12 +82,14 @@ function CrosstabPage() {
   }, [showNewModal]);
 
 
-
-  const runNewCrosstab = (topbreak) => {
+  // fetch topbreak and sig level
+  const runNewCrosstab = (topbreak, sigLevel) => {
     setLoading(true);
     setError(null);
 
-    fetch(`https://apicrosstab.nnet-dataviz.com/api/projects/${id}/new_crosstab/?topbreak=${encodeURIComponent(topbreak)}`)
+    fetch(
+      `http://127.0.0.1:8000/api/projects/${id}/new_crosstab/?topbreak=${encodeURIComponent(topbreak)}&sig=${sigLevel}`
+    )
       .then((res) => {
         if (!res.ok) throw new Error("Failed to generate new crosstab");
         return res.json();
@@ -96,6 +100,7 @@ function CrosstabPage() {
           ...it,
           question: it.question || it.Table_Title || it.var_name || `Q${idx + 1}`,
           data: it.data || it,
+          crosstab_type: "new",   // ✅ mark it so we can distinguish later
         }));
         setGroups(normalized); // replace old tables
         setLoading(false);
@@ -108,11 +113,12 @@ function CrosstabPage() {
   };
 
 
+
   // fetch
   const runQuickCrosstab = () => {
     setLoading(true);
     setError(null);
-    fetch(`https://apicrosstab.nnet-dataviz.com/api/projects/${id}/quick_crosstab/`)
+    fetch(`http://127.0.0.1:8000/api/projects/${id}/quick_crosstab/`)
       .then((res) => {
         if (!res.ok) throw new Error("Failed to generate crosstab");
         return res.json();
@@ -374,6 +380,7 @@ function CrosstabPage() {
   // -------- Renderers ----------
   // Case 1: backend sends multiple sub-tables (when topbreak is applied)
   const renderMatrixCard = (matrixObj, groupIdx, tableKeyBase, question) => {
+
     if (!matrixObj) return null;
 
     // 🔹 Case 1: SRG → array of topbreaks
@@ -425,6 +432,12 @@ function CrosstabPage() {
                             <td key={ci} className="border px-3 py-2 text-center">
                               <div className="flex flex-col items-center">
                                 <span>{cell.pct}</span>
+                                {/* sig test flag if present */}
+                                {cell.sig && (
+                                  <span className="text-red-500 text-[10px] font-bold">
+                                    {cell.sig}
+                                  </span>
+                                )}
                                 <span className="text-gray-500">{cell.count}</span>
                               </div>
                             </td>
@@ -480,7 +493,16 @@ function CrosstabPage() {
                   {r.cells?.map((cell, ci) => (
                     <td key={ci} className="border px-3 py-2 text-center">
                       <div className="flex flex-col items-center">
-                        <span>{cell.pct}</span>
+                        {/* ✅ Percent + Sig flag together */}
+                        <span>
+                          {cell.pct}{" "}
+                          {cell.sig && (
+                            <span className="text-red-500 text-[10px] font-bold">
+                              {cell.sig}
+                            </span>
+                          )}
+                        </span>
+                        {/* Count below */}
                         <span className="text-gray-500">{cell.count}</span>
                       </div>
                     </td>
@@ -792,6 +814,23 @@ function CrosstabPage() {
             ))}
           </select>
 
+          {/* 🔹 New: Sig Test dropdown */}
+          <label className="block mb-2 text-sm font-medium text-gray-700">
+            Significance Test Level
+          </label>
+          <select
+            value={sigLevel}
+            onChange={(e) => setSigLevel(e.target.value)}
+            className="w-full border rounded p-2 mb-4"
+          >
+            <option value="">-- Choose Sig Test Level --</option>
+            <option value="80">80%</option>
+            <option value="85">85%</option>
+            <option value="90">90%</option>
+            <option value="95">95%</option>
+            <option value="99">99%</option>
+          </select>
+
           <div className="flex justify-end gap-3">
             <button
               onClick={() => setShowNewModal(false)}
@@ -802,9 +841,9 @@ function CrosstabPage() {
             <button
               onClick={() => {
                 setShowNewModal(false);
-                runNewCrosstab(selectedTopbreak);
+                runNewCrosstab(selectedTopbreak, sigLevel);
               }}
-              disabled={!selectedTopbreak}
+              disabled={!selectedTopbreak || !sigLevel}
               className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
             >
               Run Crosstab
@@ -812,6 +851,7 @@ function CrosstabPage() {
           </div>
         </div>
       )}
+
 
 
 

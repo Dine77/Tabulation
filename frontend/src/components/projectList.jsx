@@ -12,7 +12,7 @@ function ProjectList() {
   const API_BASE = import.meta.env.VITE_API_URL;
   // Fetch projects
   useEffect(() => {
-    fetch("https://apicrosstab.nnet-dataviz.com/api/projects/")
+    fetch("http://127.0.0.1:8000/api/projects/")
       .then((res) => res.json())
       .then((data) => setProjects(data))
       .catch((err) => console.error("API Error:", err));
@@ -31,7 +31,7 @@ function ProjectList() {
     formData.append("project_name", projectName);
     formData.append("file", file); // 👈 must match "file" key in Django
 
-    fetch("https://apicrosstab.nnet-dataviz.com/api/projects/upload/", {
+    fetch("http://127.0.0.1:8000/api/projects/upload/", {
       method: "POST",
       body: formData,
     })
@@ -61,7 +61,7 @@ function ProjectList() {
 
 
   const handleDeleteFile = (projectId, fileName) => {
-    fetch(`https://apicrosstab.nnet-dataviz.com/api/projects/${projectId}/delete/${fileName}/`, {
+    fetch(`http://127.0.0.1:8000/api/projects/${projectId}/delete/${fileName}/`, {
       method: "DELETE",
     })
       .then((res) => res.json())
@@ -81,7 +81,7 @@ function ProjectList() {
   const handleDeleteProject = (projectId) => {
     if (!window.confirm("Are you sure you want to delete this project?")) return;
 
-    fetch(`https://apicrosstab.nnet-dataviz.com/api/projects/${projectId}/delete/`, {
+    fetch(`http://127.0.0.1:8000/api/projects/${projectId}/delete/`, {
       method: "DELETE",
     })
       .then((res) => res.json())
@@ -95,11 +95,11 @@ function ProjectList() {
 
   // Download / Generate meta file
   const handleDownloadMeta = (projectId) => {
-    fetch(`https://apicrosstab.nnet-dataviz.com/api/projects/${projectId}/generate_meta/`)
+    fetch(`http://127.0.0.1:8000/api/projects/${projectId}/generate_meta/`)
       .then((res) => res.json())
       .then((data) => {
         if (data.meta_file) {
-          window.open(`https://apicrosstab.nnet-dataviz.com/media/${data.meta_file}`, "_blank");
+          window.open(`http://127.0.0.1:8000/media/${data.meta_file}`, "_blank");
         } else {
           alert(data.error || "Failed to generate meta file");
         }
@@ -112,7 +112,7 @@ function ProjectList() {
     const formData = new FormData();
     formData.append("meta_file", file);
 
-    fetch(`https://apicrosstab.nnet-dataviz.com/api/projects/${projectId}/upload_meta/`, {
+    fetch(`http://127.0.0.1:8000/api/projects/${projectId}/upload_meta/`, {
       method: "POST",
       body: formData,
     })
@@ -125,12 +125,12 @@ function ProjectList() {
   };
 
   const handleRegenerateMeta = (projectId) => {
-    fetch(`https://apicrosstab.nnet-dataviz.com/api/projects/${projectId}/generate_meta/?force=true`)
+    fetch(`http://127.0.0.1:8000/api/projects/${projectId}/generate_meta/?force=true`)
       .then((res) => res.json())
       .then((data) => {
         if (data.meta_file) {
           alert("Meta file regenerated successfully!");
-          window.open(`https://apicrosstab.nnet-dataviz.com/media/${data.meta_file}`, "_blank");
+          window.open(`http://127.0.0.1:8000/media/${data.meta_file}`, "_blank");
         } else {
           alert(data.error || "Failed to regenerate meta file");
         }
@@ -234,7 +234,7 @@ function ProjectList() {
                     <p className="text-sm mt-1 text-gray-700">
                       Current Meta:{" "}
                       <a
-                        href={`https://apicrosstab.nnet-dataviz.com/media/${proj.meta_file}`}
+                        href={`http://127.0.0.1:8000/media/${proj.meta_file}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-600 hover:underline"
