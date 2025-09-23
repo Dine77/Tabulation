@@ -66,11 +66,11 @@ function CrosstabPage() {
   const [showNewModal, setShowNewModal] = useState(false);
   const [topbreaks, setTopbreaks] = useState([]);
   const [selectedTopbreak, setSelectedTopbreak] = useState("");
-
+  const API_BASE = import.meta.env.VITE_API_URL;
 
   useEffect(() => {
     if (showNewModal) {
-      fetch(`http://127.0.0.1:8000/api/projects/${id}/meta_titles/`)
+      fetch(`https://apicrosstab.nnet-dataviz.com/api/projects/${id}/meta_titles/`)
         .then((res) => res.json())
         .then((data) => {
           setTopbreaks(data); // ✅ fills dropdown
@@ -85,7 +85,7 @@ function CrosstabPage() {
     setLoading(true);
     setError(null);
 
-    fetch(`http://127.0.0.1:8000/api/projects/${id}/new_crosstab/?topbreak=${encodeURIComponent(topbreak)}`)
+    fetch(`https://apicrosstab.nnet-dataviz.com/api/projects/${id}/new_crosstab/?topbreak=${encodeURIComponent(topbreak)}`)
       .then((res) => {
         if (!res.ok) throw new Error("Failed to generate new crosstab");
         return res.json();
@@ -112,7 +112,7 @@ function CrosstabPage() {
   const runQuickCrosstab = () => {
     setLoading(true);
     setError(null);
-    fetch(`http://127.0.0.1:8000/api/projects/${id}/quick_crosstab/`)
+    fetch(`https://apicrosstab.nnet-dataviz.com/api/projects/${id}/quick_crosstab/`)
       .then((res) => {
         if (!res.ok) throw new Error("Failed to generate crosstab");
         return res.json();

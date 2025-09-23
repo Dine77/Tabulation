@@ -638,7 +638,12 @@ def crosstab_open_ended(df, var_name, top_n=20):
 
     rows = []
     for _, row in counts.head(top_n).iterrows():
-        rows.append({"label": row["response"], "count": int(row["count"]), "pct": f"{round((row["count"]/base)*100, 1)} %"})
+        rows.append({
+            "label": row["response"],
+            "count": int(row["count"]),
+            "pct": f"{round((row['count'] / base) * 100, 1)} %"
+        })
+
 
     rows = merge_others(rows, base)   # ✅ merge here
 

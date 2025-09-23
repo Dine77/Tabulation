@@ -1,19 +1,28 @@
 version: "3.9"
 
 services:
-  backend:
-    image: dineshrajannds/backend:v1.0
-    restart: always
-    ports:
-      - "8000:8000"
-    environment:
-      - ENV=${ENV}
-      - MONGO_URI=${MONGO_URI}
-    depends_on:
-      - db
+backend:
+  build:
+    context: . # 👈 project root, not ./backend
+    dockerfile: backend/Dockerfile
+  image: dineshrajannds/backend:v3.5
+  restart: always
+  ports:
+    - "8123:8000" # 👈 external 8123 → internal 8000
+  environment:
+    - ENV=${ENV}
+    - MONGO_URI=${MONGO_URI}
+  depends_on:
+    - db
+  healthcheck:
+    test: [ "CMD-SHELL", "curl -f http://localhost:8000/api/projects/ || exit 1" ]
+    interval: 30s
+    timeout: 10s
+    retries: 5
+    start_period: 40s
 
   api:
-    image: dineshrajannds/api:v1.0
+    image: dineshrajannds/api:v3.3
     restart: always
     ports:
       - "8001:8001"
@@ -22,12 +31,24 @@ services:
       - MONGO_URI=${MONGO_URI}
     depends_on:
       - db
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:8001/health || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
 
   frontend:
-    image: dineshrajannds/frontend:v1.0
+    image: dineshrajannds/frontend:v3.3
     restart: always
     ports:
       - "80:80"
+    environment:
+      - VITE_API_URL=http://backend:8000
+      - VITE_EXTRA_API=http://api:8001
+    depends_on:
+      - backend
+      - api
 
   db:
     image: mongo:6
@@ -46,3 +67,13 @@ services:
 
 volumes:
   mongo_data:
+
+    # Build & push examples
+    # docker build -t dineshrajannds/api:v3. -f api/Dockerfile ./api
+    # docker build -t dineshrajannds/backend:v3. -f backend/Dockerfile
+    # docker build -t dineshrajannds/frontend:v3. -f frontend/Dockerfile ./frontend
+
+    # docker login
+    # docker push dineshrajannds/backend:v3.
+    # docker push dineshrajannds/api:v3.
+    # docker push dineshrajannds/frontend:v3.

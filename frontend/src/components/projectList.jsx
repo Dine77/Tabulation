@@ -2,17 +2,17 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 function ProjectList() {
-    const navigate = useNavigate();
+  const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
   const [openModal, setOpenModal] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [file, setFile] = useState(null);
   const [selectedProject, setSelectedProject] = useState(null);
 
-
+  const API_BASE = import.meta.env.VITE_API_URL;
   // Fetch projects
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/api/projects/")
+    fetch("https://apicrosstab.nnet-dataviz.com/api/projects/")
       .then((res) => res.json())
       .then((data) => setProjects(data))
       .catch((err) => console.error("API Error:", err));
@@ -31,7 +31,7 @@ function ProjectList() {
     formData.append("project_name", projectName);
     formData.append("file", file); // 👈 must match "file" key in Django
 
-    fetch("http://127.0.0.1:8000/api/projects/upload/", {
+    fetch("https://apicrosstab.nnet-dataviz.com/api/projects/upload/", {
       method: "POST",
       body: formData,
     })
@@ -61,7 +61,7 @@ function ProjectList() {
 
 
   const handleDeleteFile = (projectId, fileName) => {
-    fetch(`http://127.0.0.1:8000/api/projects/${projectId}/delete/${fileName}/`, {
+    fetch(`https://apicrosstab.nnet-dataviz.com/api/projects/${projectId}/delete/${fileName}/`, {
       method: "DELETE",
     })
       .then((res) => res.json())
@@ -81,7 +81,7 @@ function ProjectList() {
   const handleDeleteProject = (projectId) => {
     if (!window.confirm("Are you sure you want to delete this project?")) return;
 
-    fetch(`http://127.0.0.1:8000/api/projects/${projectId}/delete/`, {
+    fetch(`https://apicrosstab.nnet-dataviz.com/api/projects/${projectId}/delete/`, {
       method: "DELETE",
     })
       .then((res) => res.json())
@@ -95,11 +95,11 @@ function ProjectList() {
 
   // Download / Generate meta file
   const handleDownloadMeta = (projectId) => {
-    fetch(`http://127.0.0.1:8000/api/projects/${projectId}/generate_meta/`)
+    fetch(`https://apicrosstab.nnet-dataviz.com/api/projects/${projectId}/generate_meta/`)
       .then((res) => res.json())
       .then((data) => {
         if (data.meta_file) {
-          window.open(`http://127.0.0.1:8000/media/${data.meta_file}`, "_blank");
+          window.open(`https://apicrosstab.nnet-dataviz.com/media/${data.meta_file}`, "_blank");
         } else {
           alert(data.error || "Failed to generate meta file");
         }
@@ -112,7 +112,7 @@ function ProjectList() {
     const formData = new FormData();
     formData.append("meta_file", file);
 
-    fetch(`http://127.0.0.1:8000/api/projects/${projectId}/upload_meta/`, {
+    fetch(`https://apicrosstab.nnet-dataviz.com/api/projects/${projectId}/upload_meta/`, {
       method: "POST",
       body: formData,
     })
@@ -125,12 +125,12 @@ function ProjectList() {
   };
 
   const handleRegenerateMeta = (projectId) => {
-    fetch(`http://127.0.0.1:8000/api/projects/${projectId}/generate_meta/?force=true`)
+    fetch(`https://apicrosstab.nnet-dataviz.com/api/projects/${projectId}/generate_meta/?force=true`)
       .then((res) => res.json())
       .then((data) => {
         if (data.meta_file) {
           alert("Meta file regenerated successfully!");
-          window.open(`http://127.0.0.1:8000/media/${data.meta_file}`, "_blank");
+          window.open(`https://apicrosstab.nnet-dataviz.com/media/${data.meta_file}`, "_blank");
         } else {
           alert(data.error || "Failed to regenerate meta file");
         }
@@ -205,46 +205,46 @@ function ProjectList() {
 
               {/* Meta Excel Actions 👇 inside project card */}
               {selectedProject === proj.id && (
-              <div className="mt-3 space-x-2">
-                <button
-                  onClick={() => handleDownloadMeta(proj.id)}
-                  className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700"
-                >
-                  Download Meta Excel
-                </button>
+                <div className="mt-3 space-x-2">
+                  <button
+                    onClick={() => handleDownloadMeta(proj.id)}
+                    className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700"
+                  >
+                    Download Meta Excel
+                  </button>
 
-                <button
-                  onClick={() => handleRegenerateMeta(proj.id)}
-                  className="px-3 py-1 bg-yellow-600 text-white rounded hover:bg-yellow-700"
-                >
-                  Regenerate Meta Excel
-                </button>
+                  <button
+                    onClick={() => handleRegenerateMeta(proj.id)}
+                    className="px-3 py-1 bg-yellow-600 text-white rounded hover:bg-yellow-700"
+                  >
+                    Regenerate Meta Excel
+                  </button>
 
-                <label className="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700 cursor-pointer">
-                  Upload Meta Excel
-                  <input
-                    type="file"
-                    className="hidden"
-                    accept=".xlsx"
-                    onChange={(e) => handleUploadMeta(proj.id, e.target.files[0])}
-                  />
-                </label>
+                  <label className="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700 cursor-pointer">
+                    Upload Meta Excel
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".xlsx"
+                      onChange={(e) => handleUploadMeta(proj.id, e.target.files[0])}
+                    />
+                  </label>
 
-                {proj.meta_file && (
-                  <p className="text-sm mt-1 text-gray-700">
-                    Current Meta:{" "}
-                    <a
-                      href={`http://127.0.0.1:8000/media/${proj.meta_file}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline"
-                    >
-                      {proj.meta_file.split("/").pop()}
-                    </a>
-                  </p>
-                )}
-              </div>
-            )}
+                  {proj.meta_file && (
+                    <p className="text-sm mt-1 text-gray-700">
+                      Current Meta:{" "}
+                      <a
+                        href={`https://apicrosstab.nnet-dataviz.com/media/${proj.meta_file}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline"
+                      >
+                        {proj.meta_file.split("/").pop()}
+                      </a>
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           ))
         ) : (
