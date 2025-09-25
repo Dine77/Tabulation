@@ -5,6 +5,8 @@ import { saveAs } from "file-saver";
 import * as XLSX from "xlsx";
 import { Dialog } from "@headlessui/react";
 
+
+// Modal for New Crosstab
 const NewCrosstabModal = ({ open, onClose, topbreaks, selected, setSelected, onRun }) => {
   return (
     <Dialog open={open} onClose={onClose} className="relative z-50">
@@ -52,7 +54,7 @@ const NewCrosstabModal = ({ open, onClose, topbreaks, selected, setSelected, onR
 };
 
 
-
+// Main Component
 function CrosstabPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -68,7 +70,64 @@ function CrosstabPage() {
   const [selectedTopbreak, setSelectedTopbreak] = useState("");
   const [sigLevel, setSigLevel] = useState("");
 
+  // Sidebar + Search 
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [touchStartX, setTouchStartX] = useState(0);
+  const [touchEndX, setTouchEndX] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(null);
+  // Scroll to Top Button
+  const [showTopButton, setShowTopButton] = useState(false);
+
+
+
+
   const API_BASE = import.meta.env.VITE_API_URL;
+
+  // Scroll Handlers
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.scrollY > 200) {
+        setShowTopButton(true);
+      } else {
+        setShowTopButton(false);
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+  // Scrollspy for active question
+  useEffect(() => {
+    const handleScroll = () => {
+      let currentIdx = null;
+      let minDistance = Infinity;
+
+      groups.forEach((_, idx) => {
+        const el = document.getElementById(`matrix_${idx}`);
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          const distance = Math.abs(rect.top - 100); // 100px offset from top
+          if (distance < minDistance) {
+            minDistance = distance;
+            currentIdx = idx;
+          }
+        }
+      });
+
+      if (currentIdx !== null) {
+        setActiveIndex(currentIdx);
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll);
+    handleScroll(); // run once on mount
+
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [groups]);
+
+
+
 
   useEffect(() => {
     if (showNewModal) {
@@ -80,6 +139,8 @@ function CrosstabPage() {
         .catch((err) => console.error("Error fetching topbreaks:", err));
     }
   }, [showNewModal]);
+
+
 
 
   // fetch topbreak and sig level
@@ -221,10 +282,10 @@ function CrosstabPage() {
 
     const fixedTop = rows.filter((r) => r.label === "Total");
     const fixedBottom = rows.filter((r) =>
-      ["Mean", "Median", "StdDev"].includes(r.label)
+      ["Mean", "StdDev"].includes(r.label)
     );
     let sortable = rows.filter(
-      (r) => !["Total", "Mean", "Median", "StdDev"].includes(r.label)
+      (r) => !["Total", "Mean", "StdDev"].includes(r.label)
     );
 
     if (cfg.colIndex !== null && cfg.direction !== "none") {
@@ -259,7 +320,6 @@ function CrosstabPage() {
     const fixedTop = [{ label: "Total", count: npsObj.base }];
     const fixedBottom = [
       { label: "Mean", count: npsObj.mean },
-      { label: "Median", count: npsObj.median },
       { label: "Std Dev", count: npsObj.stddev }
     ];
     let sortable = [
@@ -358,7 +418,12 @@ function CrosstabPage() {
                 <td className="border px-3 py-2 font-semibold">{r.label}</td>
                 <td className="border px-3 py-2 text-center">
                   <div className="flex flex-col items-center">
-                    <span>{r.pct || ""}</span>
+                    <span>
+                      {r.pct
+                        ? `${Math.round(parseFloat(r.pct))}%`
+                        : ""}
+                    </span>
+
                     <span className="text-gray-500">{r.count}</span>
                   </div>
                 </td>
@@ -431,7 +496,11 @@ function CrosstabPage() {
                           {r.cells?.map((cell, ci) => (
                             <td key={ci} className="border px-3 py-2 text-center">
                               <div className="flex flex-col items-center">
-                                <span>{cell.pct}</span>
+                                <span>
+                                  {cell.pct
+                                    ? `${Math.round(parseFloat(cell.pct))}%`
+                                    : ""}
+                                </span>
                                 {/* sig test flag if present */}
                                 {cell.sig && (
                                   <span className="text-red-500 text-[10px] font-bold">
@@ -495,7 +564,9 @@ function CrosstabPage() {
                       <div className="flex flex-col items-center">
                         {/* ✅ Percent + Sig flag together */}
                         <span>
-                          {cell.pct}{" "}
+                          {cell.pct
+                            ? `${Math.round(parseFloat(cell.pct))}%`
+                            : ""}
                           {cell.sig && (
                             <span className="text-red-500 text-[10px] font-bold">
                               {cell.sig}
@@ -529,7 +600,7 @@ function CrosstabPage() {
 
       return (
         <div
-          id={`qc_${groupIdx}`}
+          id={`matrix_${groupIdx}`}
           className="bg-white border rounded-lg shadow p-4 mb-6"
         >
           <div className="flex justify-between items-center mb-3">
@@ -561,7 +632,12 @@ function CrosstabPage() {
                     {r.cells.map((cell, ci) => (
                       <td key={ci} className="border px-3 py-2 text-center">
                         <div className="flex flex-col items-center">
-                          <span>{cell.pct ?? ""}</span>
+                          <span>
+                            {cell.pct
+                              ? `${Math.round(parseFloat(cell.pct))}%`
+                              : ""}
+                          </span>
+
                           <span className="text-gray-500">{cell.count}</span>
                         </div>
                       </td>
@@ -580,7 +656,7 @@ function CrosstabPage() {
       const rows = qcObj.rows || [];
       return (
         <div
-          id={`qc_${groupIdx}`}
+          id={`matrix_${groupIdx}`}
           className="bg-white border rounded-lg shadow p-4 mb-6"
         >
           <div className="flex justify-between items-center mb-3">
@@ -602,7 +678,12 @@ function CrosstabPage() {
                     <td className="border px-3 py-2 font-semibold">{r.label}</td>
                     <td className="border px-3 py-2 text-center">
                       <div className="flex flex-col items-center">
-                        <span>{r.pct}</span>
+                        <span>
+                          {r.pct
+                            ? `${Math.round(parseFloat(r.pct))}%`
+                            : ""}
+                        </span>
+
                         <span className="text-gray-500">{r.count}</span>
                       </div>
                     </td>
@@ -651,10 +732,10 @@ function CrosstabPage() {
               {/* ✅ First row → Summary with average */}
               {rows.length > 0 && (
                 <tr className="bg-gray-200 font-bold">
-                  <td className="border px-3 py-2">{rows[0].label} (Average %)</td>
-                  <td className="border px-3 py-2 text-center">
-                    {/* compute avg across Row1..RowN */}
-                    {(() => {
+                  {/* <td className="border px-3 py-2">{rows[0].label} (Average %)</td> */}
+                  {/* <td className="border px-3 py-2 text-center"> */}
+                  {/* compute avg across Row1..RowN */}
+                  {/* {(() => {
                       let sum = 0, count = 0;
                       rows[0].cells.forEach((c) => {
                         if (c?.pct) {
@@ -662,9 +743,9 @@ function CrosstabPage() {
                           count++;
                         }
                       });
-                      return count ? `${(sum / count).toFixed(1)}%` : "0%";
-                    })()}
-                  </td>
+                      return count ? Math.round(sum / count) + "%" : "0%";
+                    })()} */}
+                  {/* </td> */}
                 </tr>
               )}
 
@@ -679,7 +760,11 @@ function CrosstabPage() {
                     <td className="border px-3 py-2">{attrLabel}</td>
                     <td className="border px-3 py-2 text-center">
                       <div className="flex flex-col items-center">
-                        <span>{cell.pct || ""}</span>
+                        <span>
+                          {cell.pct
+                            ? `${Math.round(parseFloat(cell.pct))}%`
+                            : ""}
+                        </span>
                         <span className="text-gray-500">{cell.count ?? ""}</span>
                       </div>
                     </td>
@@ -744,7 +829,11 @@ function CrosstabPage() {
                     {r.cells.map((cell, ci) => (
                       <td key={ci} className="border px-3 py-2 text-center">
                         <div className="flex flex-col items-center">
-                          {cell.pct && <span>{cell.pct}</span>}
+                          <span>
+                            {cell.pct
+                              ? `${Math.round(parseFloat(cell.pct))}%`
+                              : ""}
+                          </span>
                           {cell.count !== null && cell.count !== undefined && (
                             <span className="text-gray-500">{cell.count}</span>
                           )}
@@ -761,173 +850,228 @@ function CrosstabPage() {
   };
 
 
+  // Sidebar Component
+  const Sidebar = ({ groups, activeIndex }) => {
+    const [searchTerm, setSearchTerm] = useState("");   // ⬅️ keep search local
 
+    return (
+      <div className="fixed top-0 left-0 h-full w-64 bg-gray-100 border-r shadow-lg z-40 flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between p-3 border-b">
+          <h2 className="font-bold text-gray-700">Questions</h2>
+        </div>
 
+        {/* Search */}
+        <div className="p-3 border-b">
+          <input
+            type="text"
+            placeholder="Search question..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full border rounded px-2 py-1 text-sm"
+          />
+        </div>
 
+        {/* Scrollable list */}
+        <div className="flex-1 overflow-y-auto p-2">
+          {groups
+            .filter((g) =>
+              g.question.toLowerCase().includes(searchTerm.toLowerCase())
+            )
+            .map((g, idx) => (
+              <div
+                key={idx}
+                className={`px-3 py-2 cursor-pointer rounded text-sm ${activeIndex === idx ? "bg-blue-200 font-bold" : "hover:bg-blue-100"
+                  }`}
+                onClick={() => {
+                  document
+                    .getElementById(`matrix_${idx}`)
+                    ?.scrollIntoView({ behavior: "smooth" });
+                }}
+              >
+                {g.question}
+              </div>
+            ))}
+        </div>
+      </div>
+    );
+  };
 
   // -------- Page render ----------
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Project Crosstabs</h1>
+    <><Sidebar groups={groups} activeIndex={activeIndex} />
+
+
+      {showTopButton && (
         <button
-          onClick={() => navigate("/")}
-          className="px-3 py-1 bg-gray-500 text-white rounded hover:bg-gray-600"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          className="fixed bottom-6 right-6 bg-gray-200 text-gray-700 px-3 py-2 rounded shadow-lg hover:bg-gray-300 flex flex-col items-center"
         >
-          Back to Projects
+          <span className="text-lg">↑</span>
+          <span className="text-xs">Top</span>
         </button>
-      </div>
-      <div className="mb-6 flex gap-4">
-        <button
-          onClick={runQuickCrosstab}
-          disabled={loading}
-          className={`px-4 py-2 rounded-lg ${loading
-            ? "bg-gray-400 cursor-not-allowed"
-            : "bg-blue-600 hover:bg-blue-700 text-white"
-            }`}
-        >
-          {loading ? "Generating..." : "Run Quick Crosstab"}
-        </button>
-
-        <button
-          onClick={() => setShowNewModal(!showNewModal)} // toggle visibility
-          className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white"
-        >
-          New Crosstab
-        </button>
-      </div>
-
-      {/* ✅ Inline dropdown section */}
-      {showNewModal && (
-        <div className="bg-white border rounded-lg shadow p-4 w-full max-w-md mt-4">
-          <label className="block mb-2 text-sm font-medium text-gray-700">
-            Select Topbreak
-          </label>
-          <select
-            value={selectedTopbreak}
-            onChange={(e) => setSelectedTopbreak(e.target.value)}
-            className="w-full border rounded p-2 mb-4"
-          >
-            <option value="">-- Choose a Topbreak --</option>
-            {topbreaks.map((tb, idx) => (
-              <option key={idx} value={tb}>{tb}</option>
-            ))}
-          </select>
-
-          {/* 🔹 New: Sig Test dropdown */}
-          <label className="block mb-2 text-sm font-medium text-gray-700">
-            Significance Test Level
-          </label>
-          <select
-            value={sigLevel}
-            onChange={(e) => setSigLevel(e.target.value)}
-            className="w-full border rounded p-2 mb-4"
-          >
-            <option value="">-- Choose Sig Test Level --</option>
-            <option value="80">80%</option>
-            <option value="85">85%</option>
-            <option value="90">90%</option>
-            <option value="95">95%</option>
-            <option value="99">99%</option>
-          </select>
-
-          <div className="flex justify-end gap-3">
-            <button
-              onClick={() => setShowNewModal(false)}
-              className="px-4 py-2 bg-gray-400 text-white rounded hover:bg-gray-500"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => {
-                setShowNewModal(false);
-                runNewCrosstab(selectedTopbreak, sigLevel);
-              }}
-              disabled={!selectedTopbreak || !sigLevel}
-              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
-            >
-              Run Crosstab
-            </button>
-          </div>
-        </div>
       )}
 
 
-
-
-      {loading && (
-        <div className="flex justify-center my-6">
-          <div className="w-12 h-12 border-4 border-blue-400 border-dashed rounded-full animate-spin"></div>
+      <div className="ml-64 p-8 max-w-6xl mx-auto">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold">Project Crosstabs</h1>
+          <button
+            onClick={() => navigate("/")}
+            className="px-3 py-1 bg-gray-500 text-white rounded hover:bg-gray-600"
+          >
+            Back to Projects
+          </button>
         </div>
-      )}
+        <div className="mb-6 flex gap-4">
+          <button
+            onClick={runQuickCrosstab}
+            disabled={loading}
+            className={`px-4 py-2 rounded-lg ${loading
+              ? "bg-gray-400 cursor-not-allowed"
+              : "bg-blue-600 hover:bg-blue-700 text-white"}`}
+          >
+            {loading ? "Generating..." : "Run Quick Crosstab"}
+          </button>
 
-      {error && <div className="text-red-500 mb-4">{error}</div>}
+          <button
+            onClick={() => setShowNewModal(!showNewModal)} // toggle visibility
+            className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white"
+          >
+            New Crosstab
+          </button>
+        </div>
 
-      <div className="space-y-8">
-        {groups.map((grp, gIdx) => {
-          const payload = grp.data || {};
-          const matrix = payload.Matrix || payload.Total || payload;
-          const summaryKeys = [
-            "Top Summary",
-            "Top2 Summary",
-            "Bottom Summary",
-            "Bottom2 Summary",
-            "Middle Summary",
-            "Mean Summary",
-          ];
+        {/* ✅ Inline dropdown section */}
+        {showNewModal && (
+          <div className="bg-white border rounded-lg shadow p-4 w-full max-w-md mt-4">
+            <label className="block mb-2 text-sm font-medium text-gray-700">
+              Select Topbreak
+            </label>
+            <select
+              value={selectedTopbreak}
+              onChange={(e) => setSelectedTopbreak(e.target.value)}
+              className="w-full border rounded p-2 mb-4"
+            >
+              <option value="">-- Choose a Topbreak --</option>
+              {topbreaks.map((tb, idx) => (
+                <option key={idx} value={tb}>{tb}</option>
+              ))}
+            </select>
 
-          // ✅ detect new crosstab with topbreak
-          const isTopbreakMode = Array.isArray(payload.matrix);
+            {/* 🔹 New: Sig Test dropdown */}
+            <label className="block mb-2 text-sm font-medium text-gray-700">
+              Significance Test Level
+            </label>
+            <select
+              value={sigLevel}
+              onChange={(e) => setSigLevel(e.target.value)}
+              className="w-full border rounded p-2 mb-4"
+            >
+              <option value="">-- Choose Sig Test Level --</option>
+              <option value="80">80%</option>
+              <option value="85">85%</option>
+              <option value="90">90%</option>
+              <option value="95">95%</option>
+              <option value="99">99%</option>
+              <option value="None">None</option>
+            </select>
 
-          let card;
-
-          if (grp.add_type === "NPS") {
-            card = renderNPSCard(payload.NPS, grp.question, `nps_${gIdx}`);
-          }
-          else if (grp.type === "SRG" && grp.crosstab_type === "new") {
-            // pass the *array* of matrices for SRG
-            card = renderMatrixCard(grp.data.matrix, gIdx, `srg_${gIdx}`, grp.question);
-          }
-          else if (grp.type !== "SRG" && grp.crosstab_type === "new") {
-            // pass the *object* matrix for normal questions
-            card = renderMatrixCard(grp.data, gIdx, `matrix_${gIdx}`, grp.question);
-          }
-          else if (grp.type === "SRG" && grp.data.Matrix) {
-            // Quick Crosstab SRG
-            card = renderQuickCrosstabCard(grp.data, gIdx, `qc_${gIdx}`, grp.question, "SRG");
-          }
-          else if (grp.type === "SC" || grp.type === "MR" || grp.type === "NR") {
-            // Quick Crosstab SC/MR/NR
-            const total = grp.data.Total;
-            card = renderQuickCrosstabCard(total, gIdx, `qc_${gIdx}`, grp.question, grp.type);
-          }
-          else {
-            // Normal (matrix with rows[].cells)
-            card = renderMatrixCard(grp.data, gIdx, `matrix_${gIdx}`, grp.question);
-          }
-
-
-          return (
-            <div key={gIdx}>
-              {card}
-
-              {/* ✅ Quick Crosstab */}
-              {!isTopbreakMode &&
-                summaryKeys.map((k) =>
-                  payload[k] ? renderSummaryCard(payload[k], gIdx, k, isTopbreakMode) : null
-                )}
-
-              {/* ✅ New Crosstab */}
-              {isTopbreakMode &&
-                summaryKeys.map((k) =>
-                  payload[k] ? renderMergedSummaryCard(payload[k], gIdx, k) : null
-                )}
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowNewModal(false)}
+                className="px-4 py-2 bg-gray-400 text-white rounded hover:bg-gray-500"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowNewModal(false);
+                  runNewCrosstab(selectedTopbreak, sigLevel);
+                }}
+                disabled={!selectedTopbreak || !sigLevel}
+                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+              >
+                Run Crosstab
+              </button>
             </div>
-          );
+          </div>
+        )}
 
-        })}
-      </div>
-    </div>
+
+
+
+        {loading && (
+          <div className="flex justify-center my-6">
+            <div className="w-12 h-12 border-4 border-blue-400 border-dashed rounded-full animate-spin"></div>
+          </div>
+        )}
+
+        {error && <div className="text-red-500 mb-4">{error}</div>}
+
+        <div className="space-y-8">
+          {groups.map((grp, gIdx) => {
+            const payload = grp.data || {};
+            const matrix = payload.Matrix || payload.Total || payload;
+            const summaryKeys = [
+              "Top Summary",
+              "Top2 Summary",
+              "Bottom Summary",
+              "Bottom2 Summary",
+              "Middle Summary",
+              "Mean Summary",
+            ];
+
+            // ✅ detect new crosstab with topbreak
+            const isTopbreakMode = Array.isArray(payload.matrix);
+
+            let card;
+
+            if (grp.add_type === "NPS") {
+              card = renderNPSCard(payload.NPS, grp.question, `matrix_${gIdx}`);
+            }
+            else if (grp.type === "SRG" && grp.crosstab_type === "new") {
+              // pass the *array* of matrices for SRG
+              card = renderMatrixCard(grp.data.matrix, gIdx, `matrix_${gIdx}`, grp.question);
+            }
+            else if (grp.type !== "SRG" && grp.crosstab_type === "new") {
+              // pass the *object* matrix for normal questions
+              card = renderMatrixCard(grp.data, gIdx, `matrix_${gIdx}`, grp.question);
+            }
+            else if (grp.type === "SRG" && grp.data.Matrix) {
+              // Quick Crosstab SRG
+              card = renderQuickCrosstabCard(grp.data, gIdx, `matrix_${gIdx}`, grp.question, "SRG");
+            }
+            else if (grp.type === "SC" || grp.type === "MR" || grp.type === "NR") {
+              // Quick Crosstab SC/MR/NR
+              const total = grp.data.Total;
+              card = renderQuickCrosstabCard(total, gIdx, `matrix_${gIdx}`, grp.question, grp.type);
+            }
+            else {
+              // Normal (matrix with rows[].cells)
+              card = renderMatrixCard(grp.data, gIdx, `matrix_${gIdx}`, grp.question);
+            }
+
+
+            return (
+              <div key={gIdx}>
+                {card}
+
+                {/* ✅ Quick Crosstab */}
+                {!isTopbreakMode &&
+                  summaryKeys.map((k) => payload[k] ? renderSummaryCard(payload[k], gIdx, k, isTopbreakMode) : null
+                  )}
+
+                {/* ✅ New Crosstab */}
+                {isTopbreakMode &&
+                  summaryKeys.map((k) => payload[k] ? renderMergedSummaryCard(payload[k], gIdx, k) : null
+                  )}
+              </div>
+            );
+
+          })}
+        </div>
+      </div></>
   );
 }
 

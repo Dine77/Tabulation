@@ -71,10 +71,9 @@ def generate_meta(request, project_id):
     file_path = os.path.join(settings.MEDIA_ROOT, project.files[0])
 
     if file_path.endswith(".sav"):
-        import pyreadstat
-        import pandas as pd
 
         df, meta = pyreadstat.read_sav(file_path, metadataonly=True)
+
 
         rows = []
         for var in meta.column_names:
@@ -305,7 +304,7 @@ def list_logs(request):
         for log in logs
     ])
 
-
+from pprint import pprint
 
 @api_view(["GET"])
 def quick_crosstab(request, project_id):
@@ -319,6 +318,8 @@ def quick_crosstab(request, project_id):
     # Use first SAV file
     sav_path = os.path.join(settings.MEDIA_ROOT, project.files[0])
     df, meta = pyreadstat.read_sav(sav_path)
+    # print(type(meta))
+    # pprint(type(vars(meta)))
 
     # Load meta Excel
     if not project.meta_file:
@@ -431,7 +432,9 @@ def get_var_name_from_title(meta_df, table_title):
 @api_view(["GET"])
 def new_crosstab(request, project_id):
     topbreak_title = request.GET.get("topbreak")   # user-selected Table_Title
-    sig_level = int(request.GET.get("sig", 95))  # default 95%
+    sig_param = request.GET.get("sig", "95")  # default "95"
+    sig_level = "None" if sig_param == "None" else int(sig_param)
+
     project = Project.objects(id=project_id).first()
     if not project:
         return Response({"error": "Project not found"}, status=404)
@@ -493,7 +496,7 @@ def new_crosstab(request, project_id):
         table_title = str(row["Table_Title"])
 
         if topbreak_title:
-            table_data = crosstab_numeric_with_topbreak(df, var_name, topbreak_title, meta, meta_df)
+            table_data = crosstab_numeric_with_topbreak(df, var_name, topbreak_title, meta, meta_df,sig_level=sig_level)
         else:
             table_data = crosstab_numeric(df, var_name)
 

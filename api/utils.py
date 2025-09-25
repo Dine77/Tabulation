@@ -24,31 +24,30 @@ def log_activity(user, action, project_name="", file_name="", details=""):
         timestamp=datetime.utcnow()
     ).save()
 
-Z_CRITICAL = {
-    80: 1.28,
-    85: 1.44,
-    90: 1.64,
-    95: 1.96,
-    99: 2.58,
-}
+# Z_CRITICAL = {
+#     80: 1.28,
+#     85: 1.44,
+#     90: 1.64,
+#     95: 1.96,
+#     99: 2.58,
+# }
 
-def ztest_proportions(count1, base1, count2, base2, alpha=0.1):
-    print("Col bases:", base1, base2)
-    if base1 < 30 or base2 < 30:
-        return False
+# # def ztest_proportions(count1, base1, count2, base2, alpha=0.1):
+#     if base1 < 30 or base2 < 30:
+#         return False
 
-    p1, p2 = count1 / base1, count2 / base2
-    p = (count1 + count2) / (base1 + base2)  # pooled
+#     p1, p2 = count1 / base1, count2 / base2
+#     p = (count1 + count2) / (base1 + base2)  # pooled
 
-    se = math.sqrt(p * (1 - p) * (1/base1 + 1/base2))
-    if se == 0:
-        return False
+#     se = math.sqrt(p * (1 - p) * (1/base1 + 1/base2))
+#     if se == 0:
+#         return False
 
-    z = (p1 - p2) / se
-    p_value = 2 * (1 - norm.cdf(abs(z)))
-    # Debug log
-    print(f"Z={z:.2f}, p={p_value:.3f}, alpha={alpha}")
-    return p_value < alpha
+#     z = (p1 - p2) / se
+#     p_value = 2 * (1 - norm.cdf(abs(z)))
+#     return p_value < alpha
+
+
 # ---------- Significance Test ----------
 def run_sig_test(p_count, p_base, c_count, c_base, z_threshold=1.96):
     """Return sig flag 'UP' or 'DOWN' based on Decipher Z-test."""
@@ -77,28 +76,28 @@ def run_sig_test(p_count, p_base, c_count, c_base, z_threshold=1.96):
     return None
 
 # ---------- Apply Sig Test to Table ----------
-def apply_sig_tests_to_table(cols, rows, alpha=0.95):
-    """
-    Apply sig test to all pairs of columns except Total (col A).
-    Each cell in rows will get a 'sig' key with UP/DOWN/None.
-    """
-    z_threshold = norm.ppf(alpha)  # e.g. 1.64 for 90%, 1.96 for 95%
+# def apply_sig_tests_to_table(cols, rows, alpha=0.95):
+    # """
+    # Apply sig test to all pairs of columns except Total (col A).
+    # Each cell in rows will get a 'sig' key with UP/DOWN/None.
+    # """
+    # z_threshold = norm.ppf(alpha)  # e.g. 1.64 for 90%, 1.96 for 95%
 
-    for i in range(1, len(cols)):   # 🔹 start from 1 → skip Total
-        base_i = cols[i][1].shape[0]
+    # for i in range(1, len(cols)):   # 🔹 start from 1 → skip Total
+    #     base_i = cols[i][1].shape[0]
 
-        for j in range(i+1, len(cols)):
-            base_j = cols[j][1].shape[0]
+    #     for j in range(i+1, len(cols)):
+    #         base_j = cols[j][1].shape[0]
 
-            for r in rows:
-                ci = r["cells"][i]
-                cj = r["cells"][j]
+    #         for r in rows:
+    #             ci = r["cells"][i]
+    #             cj = r["cells"][j]
 
-                sig = run_sig_test(ci["count"], base_i, cj["count"], base_j, z_threshold)
-                if sig == "UP":
-                    ci["sig"] = chr(65 + j)   # mark against col letter
-                elif sig == "DOWN":
-                    cj["sig"] = chr(65 + i)
+    #             sig = run_sig_test(ci["count"], base_i, cj["count"], base_j, z_threshold)
+    #             if sig == "UP":
+    #                 ci["sig"] = chr(65 + j)   # mark against col letter
+    #             elif sig == "DOWN":
+    #                 cj["sig"] = chr(65 + i)
 
 
 # --- Common Helper for Merging "Others" ---
@@ -156,23 +155,22 @@ def crosstab_nps(df, var_name):
 
     # Promoters (9-10)
     promoters = sum(int(freq.get(c, 0)) for c in [9, 10])
-    promoters_pct = round(promoters / total_base * 100, 1) if total_base > 0 else 0
+    promoters_pct = promoters / total_base * 100 if total_base > 0 else 0
 
     # Passives (7-8)
     passives = sum(int(freq.get(c, 0)) for c in [7, 8])
-    passives_pct = round(passives / total_base * 100, 1) if total_base > 0 else 0
+    passives_pct = passives / total_base * 100 if total_base > 0 else 0
 
     # Detractors (0-6)
     detractors = sum(int(freq.get(c, 0)) for c in range(0, 7))
-    detractors_pct = round(detractors / total_base * 100, 1) if total_base > 0 else 0
+    detractors_pct = detractors / total_base * 100 if total_base > 0 else 0
 
     # NPS Score
     nps_score = round(promoters_pct - detractors_pct, 1)
 
     # Extra stats
     data_series = df[var_name].dropna()
-    mean_val = round(float(np.mean(data_series)), 2) if not data_series.empty else None
-    median_val = round(float(np.median(data_series)), 2) if not data_series.empty else None
+    mean_val = round(float(np.mean(data_series)),2) if not data_series.empty else None
     std_val = round(float(np.std(data_series, ddof=0)), 2) if not data_series.empty else None
 
     results["NPS"] = {
@@ -182,7 +180,6 @@ def crosstab_nps(df, var_name):
         "passive": {"count": int(passives), "pct": f"{passives_pct}%"},
         "detractor": {"count": int(detractors), "pct": f"{detractors_pct}%"},
         "mean": mean_val,
-        "median": median_val,
         "stddev": std_val,
     }
 
@@ -209,7 +206,7 @@ def crosstab_single_choice(df, var_name, value_labels, topbreaks=None):
                     "pct": 0.0,
                 }
             merged[group_key]["count"] += int(freq[code])
-            merged[group_key]["pct"] = f"{round(float(freq_pct[code]), 1)}%"
+            merged[group_key]["pct"] = f"{float(freq_pct[code])}%"
 
 
     rows = list(merged.values())
@@ -421,32 +418,43 @@ def crosstab_single_choice_with_topbreak(
     # Column letters (A, B, C…)
     col_letters = [c.get("letter") if isinstance(c, dict) else chr(65+i) for i, c in enumerate(columns)]
 
-    thresholds = {80: 1.28, 90: 1.64, 95: 1.96, 99: 2.58}
-    z_threshold = thresholds.get(sig_level, 1.96)
+    thresholds = {80: 1.28, 90: 1.64, 95: 1.96, 99: 2.58,"None": None,}
+    z_threshold = thresholds.get(sig_level,None)
 
-    for code, label in value_labels.items():
-        row_data = {"label": f"[{code}] {label}", "cells": []}
+    for raw_code, label in value_labels.items():
+        # ✅ Normalize code for display
+        try:
+            code_num = float(raw_code)
+            code_display = str(int(code_num)) if code_num.is_integer() else str(code_num)
+        except Exception:
+            code_num = raw_code
+            code_display = str(raw_code)
+
+        row_data = {"label": f"[{code_display}] {label}", "cells": []}
         col_stats = []
 
         for col_name, sub_df in cols:
             base = sub_df[var_name].notna().sum()
-            count = (sub_df[var_name] == code).sum()
-            pct = f"{round((count / base * 100) if base > 0 else 0, 1)}%" if base > 0 else "0%"
 
+            # ✅ Match values as float → int safe comparison
+            count = (sub_df[var_name] == code_num).sum()
+
+            pct = f"{(count / base * 100) if base > 0 else 0}%" if base > 0 else "0%"
             col_stats.append((count, base))
             row_data["cells"].append({"count": int(count), "pct": pct})
 
+        if z_threshold is not None:
         # 🔹 Run sig test pairwise (skip Total = A at index 0)
-        for i in range(1, len(row_data["cells"])):        # start from B
-            for j in range(i + 1, len(row_data["cells"])):
-                p_count, p_base = col_stats[i]
-                c_count, c_base = col_stats[j]
-                sig = run_sig_test(p_count, p_base, c_count, c_base, z_threshold)
+            for i in range(1, len(row_data["cells"])):  
+                for j in range(i + 1, len(row_data["cells"])):
+                    p_count, p_base = col_stats[i]
+                    c_count, c_base = col_stats[j]
+                    sig = run_sig_test(p_count, p_base, c_count, c_base, z_threshold)
 
-                if sig == "UP":
-                    row_data["cells"][j].setdefault("sig", []).append(col_letters[i])
-                elif sig == "DOWN":
-                    row_data["cells"][i].setdefault("sig", []).append(col_letters[j])
+                    if sig == "UP":
+                        row_data["cells"][j].setdefault("sig", []).append(col_letters[i])
+                    elif sig == "DOWN":
+                        row_data["cells"][i].setdefault("sig", []).append(col_letters[j])
 
         # Convert sig list → string "B C"
         for c in row_data["cells"]:
@@ -456,6 +464,8 @@ def crosstab_single_choice_with_topbreak(
         rows.append(row_data)
 
     return {"columns": columns, "rows": rows}
+
+
 
 # ---------- Multi Response ----------
 def crosstab_multi_response_with_topbreak(
@@ -467,8 +477,8 @@ def crosstab_multi_response_with_topbreak(
     # Letters for columns (A = Total, but we’ll skip it in sig tests)
     col_letters = [c.get("letter") if isinstance(c, dict) else chr(65+i) for i, c in enumerate(columns)]
 
-    thresholds = {80: 1.28, 90: 1.64, 95: 1.96, 99: 2.58}
-    z_threshold = thresholds.get(sig_level, 1.96)
+    thresholds = {80: 1.28, 90: 1.64, 95: 1.96, 99: 2.58,    "None": None}
+    z_threshold = thresholds.get(sig_level,None)
 
     for _, row in group_rows.iterrows():
         var = row["Var_Name"]
@@ -484,21 +494,22 @@ def crosstab_multi_response_with_topbreak(
             else:
                 base = sub_df[var].notna().sum()
                 count = sub_df[var].sum()
-            pct = f"{round((count / base * 100) if base > 0 else 0, 1)}%" if base > 0 else "0%"
+            pct = f"{(count / base * 100) if base > 0 else 0}%" if base > 0 else "0%"
             col_stats.append((count, base))
             row_data["cells"].append({"count": int(count), "pct": pct})
 
-        # 🔹 Sig tests (skip index 0 → Total)
-        for i in range(1, len(row_data["cells"])):
-            for j in range(i + 1, len(row_data["cells"])):
-                p_count, p_base = col_stats[i]
-                c_count, c_base = col_stats[j]
-                sig = run_sig_test(p_count, p_base, c_count, c_base, z_threshold)
+        if z_threshold is not None:
+            # 🔹 Sig tests (skip index 0 → Total)
+            for i in range(1, len(row_data["cells"])):
+                for j in range(i + 1, len(row_data["cells"])):
+                    p_count, p_base = col_stats[i]
+                    c_count, c_base = col_stats[j]
+                    sig = run_sig_test(p_count, p_base, c_count, c_base, z_threshold)
 
-                if sig == "UP":
-                    row_data["cells"][j].setdefault("sig", []).append(col_letters[i])
-                elif sig == "DOWN":
-                    row_data["cells"][i].setdefault("sig", []).append(col_letters[j])
+                    if sig == "UP":
+                        row_data["cells"][j].setdefault("sig", []).append(col_letters[i])
+                    elif sig == "DOWN":
+                        row_data["cells"][i].setdefault("sig", []).append(col_letters[j])
 
         # Convert sig list → "B C" etc
         for c in row_data["cells"]:
@@ -513,24 +524,61 @@ def crosstab_multi_response_with_topbreak(
 
 
 # ---------- Numeric ----------
-def crosstab_numeric_with_topbreak(df, var_name, topbreak_title, meta, meta_df):
+def crosstab_numeric_with_topbreak(df, var_name, topbreak_title, meta, meta_df, sig_level=95):
     cols, columns = build_topbreak(df, meta_df, topbreak_title, meta)
     rows = []
 
-    stats = ["Mean", "Median", "StdDev"]
+    # --- thresholds for significance
+    thresholds = {80: 1.28, 90: 1.64, 95: 1.96, 99: 2.58}
+    z_threshold = thresholds.get(sig_level, 1.96) if sig_level != "None" else None
+
+    # --- calculate Mean + StdDev
+    stats = ["Mean", "StdDev"]
+    col_stats = []  # store means + bases for sig test
+
     for stat in stats:
         row_data = {"label": stat, "cells": []}
+
         for col_name, sub_df in cols:
             if stat == "Mean":
-                val = round(sub_df[var_name].mean(), 2) if not sub_df[var_name].empty else 0
-            elif stat == "Median":
-                val = round(sub_df[var_name].median(), 2) if not sub_df[var_name].empty else 0
-            else:
-                val = round(sub_df[var_name].std(), 2) if not sub_df[var_name].empty else 0
-            row_data["cells"].append({"count": val, "pct": ""})
+                val = sub_df[var_name].mean() if not sub_df[var_name].empty else 0
+                base = sub_df[var_name].notna().sum()
+                row_data["cells"].append({"count": round(val, 2), "pct": ""})
+                col_stats.append((val, base))
+            else:  # StdDev
+                val = sub_df[var_name].std() if not sub_df[var_name].empty else 0
+                row_data["cells"].append({"count": round(val, 2), "pct": ""})
+
         rows.append(row_data)
 
+    # --- Sig test only on Mean row
+    if z_threshold is not None and rows:
+        mean_cells = rows[0]["cells"]  # first row is Mean
+        col_letters = [c.get("letter") for c in columns]
+
+        for i in range(1, len(mean_cells)):  # skip Total (A)
+            for j in range(i + 1, len(mean_cells)):
+                mean_i, base_i = col_stats[i]
+                mean_j, base_j = col_stats[j]
+
+                if base_i > 1 and base_j > 1:
+                    # Standard error of difference between means
+                    se = np.sqrt((np.var(df[var_name], ddof=1) / base_i) + 
+                                 (np.var(df[var_name], ddof=1) / base_j))
+                    if se > 0:
+                        z = (mean_j - mean_i) / se
+                        if z >= z_threshold:
+                            mean_cells[j].setdefault("sig", []).append(col_letters[i])
+                        elif z <= -z_threshold:
+                            mean_cells[i].setdefault("sig", []).append(col_letters[j])
+
+        # flatten sig list → "B C"
+        for c in mean_cells:
+            if "sig" in c:
+                c["sig"] = " ".join(c["sig"])
+
     return {"columns": columns, "rows": rows}
+
 
 
 
@@ -563,77 +611,106 @@ def get_var_name_from_title(meta_df, title):
 
 
 # ---------- Single Response Grid ----------
-def crosstab_single_response_grid_with_topbreak(df, var_group, group_rows, meta, topbreak_title, meta_df):
-    """
-    Return a dict with:
-      - "matrix": list of per-topbreak sub-tables
-      - merged summaries (Top Summary, Top2 Summary, etc.) across Total + topbreaks
-    """
+def apply_sig_test_to_srg(results, sig_level=95):
+    """Apply sig tests to SRG cells across topbreaks."""
+    thresholds = {80: 1.28, 90: 1.64, 95: 1.96, 99: 2.58}
+    z_threshold = thresholds.get(sig_level, 1.96)
 
-    # fallback: if no valid topbreak given → behave like normal grid
+    # keep only valid sub-tables (with rows)
+    srg_tables = [res for res in results if "rows" in res]
+
+    if not srg_tables:
+        return
+
+    n_cols = len(srg_tables[0]["rows"][0]["cells"])
+    col_letters = get_topbreak_letters(len(srg_tables))  # A=Total, B, C…
+
+    # loop over rows
+    for ri in range(len(srg_tables[0]["rows"])):
+        for ci in range(n_cols):
+            col_stats = []
+            # collect (count, base) for this row+cell across splits
+            for res in srg_tables:
+                row = res["rows"][ri]
+                cell = row["cells"][ci]
+                count = cell.get("count", 0)
+                base = cell.get("base", row.get("base", 0))
+                col_stats.append((count, base))
+
+            # pairwise tests
+            for i in range(1, len(col_stats)):  # skip A=Total
+                for j in range(i + 1, len(col_stats)):
+                    p_count, p_base = col_stats[i]
+                    c_count, c_base = col_stats[j]
+                    sig = run_sig_test(p_count, p_base, c_count, c_base, z_threshold)
+
+                    if sig == "UP":
+                        srg_tables[j]["rows"][ri]["cells"][ci].setdefault("sig", []).append(col_letters[i])
+                    elif sig == "DOWN":
+                        srg_tables[i]["rows"][ri]["cells"][ci].setdefault("sig", []).append(col_letters[j])
+
+    # flatten sig arrays into strings
+    for res in srg_tables:
+        for row in res["rows"]:
+            for cell in row["cells"]:
+                if "sig" in cell:
+                    cell["sig"] = "".join(cell["sig"])
+
+
+
+def crosstab_single_response_grid_with_topbreak(
+    df, var_group, group_rows, meta, topbreak_title, meta_df, sig_level=95
+):
     if not topbreak_title or topbreak_title not in meta_df["Table_Title"].astype(str).values:
         return crosstab_single_response_grid(df, var_group, group_rows, meta)
 
     results = []
-
-    # find the meta rows for the topbreak Table_Title
     top_rows = meta_df[meta_df["Table_Title"] == topbreak_title]
     if top_rows.empty:
         return crosstab_single_response_grid(df, var_group, group_rows, meta)
 
     tb_qtype = top_rows["Question_Type"].str.upper().iloc[0]
 
-    # --- Case 1: SC / SR / NR topbreak
     if tb_qtype in ["SC", "SR", "NR"]:
         tb_var = str(top_rows.iloc[0]["Var_Name"]).strip()
         if tb_var not in df.columns:
             return crosstab_single_response_grid(df, var_group, group_rows, meta)
-
-        split_values = [v for v in df[tb_var].dropna().unique()]
-        split_labels = [
-            meta.variable_value_labels.get(tb_var, {}).get(v, str(v)) for v in split_values
-        ]
-
-        for sv, slabel in zip(split_values, split_labels):
+        value_labels = meta.variable_value_labels.get(tb_var, {})
+        for sv, slabel in value_labels.items():
             tb_df = df[df[tb_var] == sv]
             sub_table = crosstab_single_response_grid(tb_df, var_group, group_rows, meta)
-            results.append({
-                "topbreak_label": slabel,
-                **sub_table
-            })
+            results.append({"topbreak_label": slabel, **sub_table})
 
-    # --- Case 2: MR / SRG topbreak
     elif tb_qtype in ["MR", "SRG"]:
         for _, r in top_rows.iterrows():
             child_var = str(r["Var_Name"]).strip()
             child_label = r.get("Option_Text", r.get("Var_Label", child_var))
             if child_var not in df.columns:
                 continue
-
             tb_df = df[df[child_var] == 1]
             sub_table = crosstab_single_response_grid(tb_df, var_group, group_rows, meta)
-            results.append({
-                "topbreak_label": child_label,
-                **sub_table
-            })
+            results.append({"topbreak_label": child_label, **sub_table})
 
     else:
-        # fallback
         return crosstab_single_response_grid(df, var_group, group_rows, meta)
 
-    # ✅ Build merged summaries ONLY for topbreak mode
+    # prepend Total
+    total_table = crosstab_single_response_grid(df, var_group, group_rows, meta)
+    results.insert(0, {"topbreak_label": "Total", **total_table})
+
+    # ✅ Build column labels with letters (A, B, C...)
+    letters = get_topbreak_letters(len(results))
+    columns = []
+    for i, r in enumerate(results):
+        columns.append({"label": r["topbreak_label"], "letter": letters[i]})
+
+    # ✅ Run sig test per cell
+    if sig_level and sig_level != "none":
+        apply_sig_test_to_srg(results, sig_level)
+
     merged_summaries = build_topbreak_summaries(df, var_group, group_rows, meta, results)
 
-    return {
-        "matrix": results,          # per-topbreak crosstabs
-        **merged_summaries          # merged summaries across Total + all topbreaks
-    }
-
-
-
-
-
-
+    return {"matrix": results, "columns": columns, **merged_summaries}
 
 
 
@@ -722,7 +799,7 @@ def crosstab_multi_response(df, var_group, meta_rows, meta):
             continue
 
         count = int(df[var_name].apply(lambda x: 1 if pd.notna(x) and x != 0 else 0).sum())
-        pct = round((count / base) * 100, 1) if base > 0 else 0.0
+        pct = (count / base) * 100 if base > 0 else 0.0
 
         key = var_label.lower()
         if key not in merged:
@@ -748,13 +825,11 @@ def crosstab_multi_response(df, var_group, meta_rows, meta):
 def crosstab_numeric(df, var_name):
     series = df[var_name].dropna()
     base = len(series)
-    mean_val = round(series.mean(), 2) if base > 0 else 0
-    median_val = round(series.median(), 2) if base > 0 else 0
-    std_val = round(series.std(), 2) if base > 1 else 0
+    mean_val = series.mean() if base > 0 else 0
+    std_val = series.std()if base > 1 else 0
 
     rows = [
         {"label": "Mean", "count": mean_val, "pct": ""},
-        {"label": "Median", "count": median_val, "pct": ""},
         {"label": "Standard Deviation", "count": std_val, "pct": ""}
     ]
 
@@ -775,7 +850,7 @@ def crosstab_open_ended(df, var_name, top_n=20):
         rows.append({
             "label": row["response"],
             "count": int(row["count"]),
-            "pct": f"{round((row['count'] / base) * 100, 1)} %"
+            "pct": f"{(row['count'] / base) * 100} %"
         })
 
 
@@ -848,7 +923,7 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
             counts = attr_data[var_name]["counts"]
             base = attr_data[var_name]["base"]
             count = sum(int(counts.get(c, 0)) for c in bottom_codes)
-            pct = f"{round((count/base)*100,1)}%" if base > 0 else "0%"
+            pct = f"{(count/base)*100}%" if base > 0 else "0%"
             bottom_row["cells"].append({"count": count, "pct": pct})
         rows.append(bottom_row)
 
@@ -859,7 +934,7 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
             counts = attr_data[var_name]["counts"]
             base = attr_data[var_name]["base"]
             count = int(counts.get(code, 0))
-            pct = f"{round((count/base)*100,1)}%" if base > 0 else "0%"
+            pct = f"{(count/base)*100}%" if base > 0 else "0%"
             row_cells.append({"count": count, "pct": pct})
         label = format_code_label(code, value_labels)
         rows.append({"label": label, "cells": row_cells})
@@ -872,27 +947,24 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
             counts = attr_data[var_name]["counts"]
             base = attr_data[var_name]["base"]
             count = sum(int(counts.get(c, 0)) for c in top_codes)
-            pct = f"{round((count/base)*100,1)}%" if base > 0 else "0%"
+            pct = f"{(count/base)*100}%" if base > 0 else "0%"
             top_row["cells"].append({"count": count, "pct": pct})
         rows.append(top_row)
 
         # --- Mean, Median, StdDev ---
-        mean_row, median_row, std_row = (
+        mean_row, std_row = (
             {"label": "Mean", "cells": []},
-            {"label": "Median", "cells": []},
             {"label": "StdDev", "cells": []},
         )
         for var_name, _ in attributes:
             series = attr_data[var_name]["series"]
             if len(series) > 0:
                 mean_row["cells"].append({"count": round(series.mean(), 2)})
-                median_row["cells"].append({"count": round(series.median(), 2)})
                 std_row["cells"].append({"count": round(series.std(), 2)})
             else:
                 mean_row["cells"].append({"count": 0})
-                median_row["cells"].append({"count": 0})
                 std_row["cells"].append({"count": 0})
-        rows.extend([mean_row, median_row, std_row])
+        rows.extend([mean_row, std_row])
 
     # ✅ merge "Others"
     rows = merge_others(rows, total_base, is_cells=True)
@@ -916,7 +988,7 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
                 counts = attr_data[var_name]["counts"]
                 base = attr_data[var_name]["base"]
                 count = sum(int(counts.get(c, 0)) for c in codes)
-                pct = f"{round((count/base)*100,1)}%" if base > 0 else "0%"
+                pct = f"{(count/base)*100}%" if base > 0 else "0%"
                 row["cells"].append({"count": count, "pct": pct})
             return row
 
