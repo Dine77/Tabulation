@@ -592,7 +592,7 @@ function CrosstabPage() {
     if (!qcObj) return null;
 
     // 🔹 Case 1: SRG in Quick Crosstab
-    if (type === "SRG" && qcObj.Matrix) {
+    if (type === "SRG" || type === "MRG" && qcObj.Matrix) {
       const matrix = qcObj.Matrix;
       const cols = (matrix.columns || []).map((c) =>
         typeof c === "string" ? { label: c, letter: "" } : c
@@ -1030,17 +1030,17 @@ function CrosstabPage() {
             if (grp.add_type === "NPS") {
               card = renderNPSCard(payload.NPS, grp.question, `matrix_${gIdx}`);
             }
-            else if (grp.type === "SRG" && grp.crosstab_type === "new") {
+            else if (grp.type === "SRG" || grp.type === "MRG" && grp.crosstab_type === "new") {
               // pass the *array* of matrices for SRG
               card = renderMatrixCard(grp.data.matrix, gIdx, `matrix_${gIdx}`, grp.question);
             }
-            else if (grp.type !== "SRG" && grp.crosstab_type === "new") {
+            else if (grp.type !== "SRG" || grp.type !== "MRG" && grp.crosstab_type === "new") {
               // pass the *object* matrix for normal questions
               card = renderMatrixCard(grp.data, gIdx, `matrix_${gIdx}`, grp.question);
             }
-            else if (grp.type === "SRG" && grp.data.Matrix) {
+            else if (grp.type === "SRG" || grp.type === "MRG" && grp.data.Matrix) {
               // Quick Crosstab SRG
-              card = renderQuickCrosstabCard(grp.data, gIdx, `matrix_${gIdx}`, grp.question, "SRG");
+              card = renderQuickCrosstabCard(grp.data, gIdx, `matrix_${gIdx}`, grp.question, grp.type);
             }
             else if (grp.type === "SC" || grp.type === "MR" || grp.type === "NR") {
               // Quick Crosstab SC/MR/NR

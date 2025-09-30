@@ -12,7 +12,7 @@ import pyreadstat
 import pandas as pd
 from .utils import crosstab_open_ended, log_activity,load_project_meta, crosstab_multi_response_with_topbreak,crosstab_numeric_with_topbreak,crosstab_open_ended_with_topbreak,crosstab_single_response_grid_with_topbreak
 import math
-from .utils import crosstab_single_choice, crosstab_multi_response,crosstab_numeric,crosstab_single_response_grid,crosstab_nps,crosstab_single_choice_with_topbreak
+from .utils import crosstab_single_choice, crosstab_multi_response,crosstab_numeric,crosstab_single_response_grid,crosstab_nps,crosstab_single_choice_with_topbreak,crosstab_multi_response_grid,crosstab_multi_response_grid_with_topbreak
 
 
 
@@ -67,14 +67,19 @@ def generate_meta(request, project_id):
     if not project.files or len(project.files) == 0:
         return Response({"error": "No data files in project"}, status=400)
 
-    # For now, pick first file (later can choose specific file)
+    # For now, pick first file
     file_path = os.path.join(settings.MEDIA_ROOT, project.files[0])
 
-    if file_path.endswith(".sav"):
+    # Create project folder
+    project_folder = os.path.join(settings.MEDIA_ROOT, project.project_name)
+    os.makedirs(project_folder, exist_ok=True)
+    meta_file_path = os.path.join(project_folder, "meta.xlsx")
 
+    # ---------- CASE 1: SPSS (.sav) ----------
+    if file_path.endswith(".sav"):
         df, meta = pyreadstat.read_sav(file_path, metadataonly=True)
 
-
+        # Build Sheet1 (variables metadata)
         rows = []
         for var in meta.column_names:
             rows.append({
@@ -86,74 +91,135 @@ def generate_meta(request, project_id):
                 "Base_Title": "",
                 "Add_Question_Type": ""
             })
-
         df_meta = pd.DataFrame(rows)
 
-        project_folder = os.path.join(settings.MEDIA_ROOT, project.project_name)
-        os.makedirs(project_folder, exist_ok=True)
+        # Build Sheet2 (value labels)
+        valuelabel_rows = []
+        for var, mapping in meta.variable_value_labels.items():
+            first = True
+            for val, label in mapping.items():
+                valuelabel_rows.append({
+                    "variable": var if first else "",
+                    "value": val,
+                    "label": label
+                })
+                first = False
 
-        meta_file_path = os.path.join(project_folder, "meta.xlsx")
-        df_meta.to_excel(meta_file_path, index=False)
+        if valuelabel_rows:
+            df_value_labels = pd.DataFrame(valuelabel_rows)
+        else:
+            # Always create empty sheet if no labels
+            df_value_labels = pd.DataFrame(columns=["variable", "value", "label"])
 
-        relative_path = os.path.relpath(meta_file_path, settings.MEDIA_ROOT).replace("\\", "/")
-        project.meta_file = relative_path
-        project.save()
-            
-        # log activity
-        # Log regenerate event
-        log_activity(
-            user=request.user.username if request.user.is_authenticated else "guest",
-            action="regenerate_meta" if force else "generate_meta",
-            project_name=project.project_name,
-            file_name="meta.xlsx"
-        )
+        # Write both sheets into meta.xlsx
+        with pd.ExcelWriter(meta_file_path, engine="openpyxl") as writer:
+            df_meta.to_excel(writer, index=False, sheet_name="metadata")
+            df_value_labels.to_excel(writer, index=False, sheet_name="value_label")
 
-        return Response({"meta_file": relative_path, "message": "Meta file generated (forced)"})
+
+        # ---------- CASE 2: Excel (.xlsx) ----------
+    elif file_path.endswith(".xlsx"):
+        xls = pd.ExcelFile(file_path)
+
+        # --- Read variable_label sheet ---
+        if "variable_label" not in xls.sheet_names:
+            return Response({"error": "Excel must contain a 'variable_label' sheet"}, status=400)
+
+        variable_label_df = pd.read_excel(xls, "variable_label")
+
+        # Normalize column names (lowercase + strip spaces)
+        variable_label_df.columns = [c.strip().lower() for c in variable_label_df.columns]
+
+        if not {"variable", "label"}.issubset(variable_label_df.columns):
+            return Response({"error": "variable_label sheet must contain 'variable' and 'label' columns"}, status=400)
+
+        # Build Sheet1 (variables metadata, same format as SAV)
+        rows = []
+        for _, row in variable_label_df.iterrows():
+            rows.append({
+                "Var_Name": row["variable"],
+                "Var_Label": "",
+                "Table_Title": row["label"],
+                "Question_Type": "",
+                "Var_Grp": "",
+                "Base_Title": "",
+                "Add_Question_Type": ""
+            })
+            df_meta = pd.DataFrame(rows)
+
+        # --- Read value_label sheet (optional) ---
+        if "value_label" in xls.sheet_names:
+            df_value_labels = pd.read_excel(xls, "value_label")
+            # Normalize headers
+            df_value_labels.columns = [c.strip().lower() for c in df_value_labels.columns]
+        else:
+            # Create empty structure if missing
+            df_value_labels = pd.DataFrame(columns=["variable", "value", "label"])
+
+        # --- Write both sheets ---
+        with pd.ExcelWriter(meta_file_path, engine="openpyxl") as writer:
+            df_meta.to_excel(writer, index=False, sheet_name="metadata")
+            df_value_labels.to_excel(writer, index=False, sheet_name="value_label")
+
+
     else:
         return Response({"error": "Unsupported file type for metadata"}, status=400)
 
-
-@api_view(["POST"])
-@parser_classes([MultiPartParser, FormParser])
-def upload_project(request):
-    project_name = request.data.get("project_name")
-    file = request.FILES.get("file")
-
-    if not project_name or not file:
-        return Response({"error": "Project name and file required"}, status=400)
-
-    # Create folder
-    project_folder = os.path.join(settings.MEDIA_ROOT, project_name)
-    os.makedirs(project_folder, exist_ok=True)
-
-    # Save file
-    file_path = os.path.join(project_folder, file.name)
-    with open(file_path, "wb+") as dest:
-        for chunk in file.chunks():
-            dest.write(chunk)
-
-    relative_path = os.path.relpath(file_path, settings.MEDIA_ROOT).replace("\\", "/")
-
-    # Find project by name or create new
-    project = Project.objects(project_name=project_name).first()
-    if not project:
-        project = Project(project_name=project_name, files=[], created_at=datetime.utcnow())
-
-    if relative_path not in project.files:  # avoid duplicate file entries
-        project.files.append(relative_path)
-
+    # Save relative path in DB
+    relative_path = os.path.relpath(meta_file_path, settings.MEDIA_ROOT).replace("\\", "/")
+    project.meta_file = relative_path
     project.save()
 
-        # Log activity
+    # Log activity
     log_activity(
         user=request.user.username if request.user.is_authenticated else "guest",
-        action="upload Project file",
-        project_name=project_name,
-        file_name=file.name
+        action="regenerate_meta" if force else "generate_meta",
+        project_name=project.project_name,
+        file_name="meta.xlsx"
     )
 
-    serializer = ProjectSerializer(project)
-    return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response({"meta_file": relative_path, "message": "Meta file generated"})
+
+# @api_view(["POST"])
+# @parser_classes([MultiPartParser, FormParser])
+# def upload_project(request):
+#     project_name = request.data.get("project_name")
+#     file = request.FILES.get("file")
+#     if not project_name or not file:
+#         return Response({"error": "Project name and file required"}, status=400)
+
+#     # Create folder
+#     project_folder = os.path.join(settings.MEDIA_ROOT, project_name)
+#     os.makedirs(project_folder, exist_ok=True)
+
+#     # Save file
+#     file_path = os.path.join(project_folder, file.name)
+#     with open(file_path, "wb+") as dest:
+#         for chunk in file.chunks():
+#             dest.write(chunk)
+
+#     relative_path = os.path.relpath(file_path, settings.MEDIA_ROOT).replace("\\", "/")
+
+#     # Find project by name or create new
+#     project = Project.objects(project_name=project_name).first()
+#     if not project:
+#         project = Project(project_name=project_name, files=[], created_at=datetime.utcnow())
+
+#     if relative_path not in project.files:  # avoid duplicate file entries
+#         project.files.append(relative_path)
+
+#     project.save()
+
+#         # Log activity
+#     log_activity(
+#         user=request.user.username if request.user.is_authenticated else "guest",
+#         action="upload Project file",
+#         project_name=project_name,
+#         file_name=file.name
+#     )
+
+#     serializer = ProjectSerializer(project)
+#     return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 @api_view(["DELETE"])
@@ -239,12 +305,13 @@ def upload_meta(request, project_id):
 
     return Response({"meta_file": relative_path, "message": "Meta file uploaded successfully"})
 
-# // log_activity
+# // files upload view
 @api_view(["POST"])
 @parser_classes([MultiPartParser, FormParser])
 def upload_project(request):
     project_name = request.data.get("project_name")
     file = request.FILES.get("file")
+    print(project_name)
 
     if not project_name or not file:
         return Response({"error": "Project name and file required"}, status=400)
@@ -279,7 +346,7 @@ def upload_project(request):
     # Log activity
     log_activity(
         user=request.user.username if request.user.is_authenticated else "guest",
-        action="upload Project file Sav",
+        action="upload Project file",
         project_name=project_name,
         file_name=file.name
     )
@@ -316,8 +383,19 @@ def quick_crosstab(request, project_id):
         return Response({"error": "No data files found"}, status=400)
 
     # Use first SAV file
-    sav_path = os.path.join(settings.MEDIA_ROOT, project.files[0])
-    df, meta = pyreadstat.read_sav(sav_path)
+    data_file = os.path.join(settings.MEDIA_ROOT, project.files[0])
+
+    ext = os.path.splitext(data_file)[1].lower()
+    if ext == ".sav":
+        df, _ = pyreadstat.read_sav(data_file)   # only df needed, ignore meta
+    elif ext in [".xlsx", ".xls"]:
+        xls = pd.ExcelFile(data_file)
+        if "data" not in xls.sheet_names:
+            return Response({"error": "Excel must contain a 'data' sheet"}, status=400)
+        df = pd.read_excel(xls, "data")
+    else:
+        return Response({"error": f"Unsupported file type: {ext}"}, status=400)
+
     # print(type(meta))
     # pprint(type(vars(meta)))
 
@@ -325,7 +403,26 @@ def quick_crosstab(request, project_id):
     if not project.meta_file:
         return Response({"error": "Meta Excel not found"}, status=400)
     meta_path = os.path.join(settings.MEDIA_ROOT, project.meta_file)
-    meta_df = pd.read_excel(meta_path)
+    # Load both sheets
+    xls = pd.ExcelFile(meta_path)
+    meta_df = pd.read_excel(xls, "metadata")
+
+    if "value_label" in xls.sheet_names:
+        value_df = pd.read_excel(xls, "value_label")
+        # normalize column names
+        value_df.columns = [c.strip().lower() for c in value_df.columns]
+
+        # Forward fill variable column (in case blank rows after first variable)
+        if "variable" in value_df.columns:
+            value_df["variable"] = value_df["variable"].ffill()
+
+        # Build dict → { "Q1": {1: "Male", 2: "Female"}, "Q2": {1: "Yes", 2: "No"} }
+        value_label_dict = {}
+        for var, group in value_df.groupby("variable"):
+            mapping = dict(zip(group["value"], group["label"]))
+            value_label_dict[var] = mapping
+    else:
+        value_label_dict = {}
 
     output = []
 
@@ -350,7 +447,7 @@ def quick_crosstab(request, project_id):
                 table_data = crosstab_nps(df, var_name)   # 🔹 NPS function
                 qtype = "NPS"
             else:
-                value_labels = meta.variable_value_labels.get(var_name, {})
+                value_labels = value_label_dict.get(var_name, {})
                 table_data = crosstab_single_choice(df, var_name, value_labels)
                 qtype = "SC"
 
@@ -368,7 +465,7 @@ def quick_crosstab(request, project_id):
     for grp in mr_groups:
         group_rows = meta_df[meta_df["Var_Grp"] == grp]
         table_title = group_rows.iloc[0]["Table_Title"]
-        table_data = crosstab_multi_response(df, grp, group_rows, meta)
+        table_data = crosstab_multi_response(df, grp, group_rows, value_label_dict)
         output.append({
             "question": table_title,
             "var_group": grp,
@@ -409,7 +506,7 @@ def quick_crosstab(request, project_id):
     for grp in srg_groups:
         group_rows = meta_df[meta_df["Var_Grp"] == grp]
         table_title = group_rows.iloc[0]["Table_Title"]
-        table_data = crosstab_single_response_grid(df, grp, group_rows, meta)
+        table_data = crosstab_single_response_grid(df, grp, group_rows, value_label_dict)
         output.append({
             "question": table_title,
             "var_group": grp,
@@ -417,7 +514,22 @@ def quick_crosstab(request, project_id):
             "data": table_data
         })
 
+        # --- Multi Response Grid (MRG) ---
+    mrg_groups = meta_df[meta_df["Question_Type"].str.upper() == "MRG"]["Var_Grp"].unique()
+    for grp in mrg_groups:
+        group_rows = meta_df[meta_df["Var_Grp"] == grp]
+        table_title = group_rows.iloc[0]["Table_Title"]
+        table_data = crosstab_multi_response_grid(df, grp, group_rows, value_label_dict)
+        output.append({
+            "question": table_title,
+            "var_group": grp,
+            "type": "MRG",
+            "data": table_data
+        })
+
+
     return Response(clean_for_json(output))
+    
 
 # Helper to get var name from title
 def get_var_name_from_title(meta_df, table_title):
@@ -439,11 +551,50 @@ def new_crosstab(request, project_id):
     if not project:
         return Response({"error": "Project not found"}, status=404)
 
-    # Load SAV + meta
-    sav_path = os.path.join(settings.MEDIA_ROOT, project.files[0])
-    df, meta = pyreadstat.read_sav(sav_path)
+    if not project.files or len(project.files) == 0:
+        return Response({"error": "No data files found"}, status=400)
+
+    # Use first SAV file
+    data_file = os.path.join(settings.MEDIA_ROOT, project.files[0])
+
+    ext = os.path.splitext(data_file)[1].lower()
+    if ext == ".sav":
+        df, _ = pyreadstat.read_sav(data_file)   # only df needed, ignore meta
+    elif ext in [".xlsx", ".xls"]:
+        xls = pd.ExcelFile(data_file)
+        if "data" not in xls.sheet_names:
+            return Response({"error": "Excel must contain a 'data' sheet"}, status=400)
+        df = pd.read_excel(xls, "data")
+    else:
+        return Response({"error": f"Unsupported file type: {ext}"}, status=400)
+
+    # print(type(meta))
+    # pprint(type(vars(meta)))
+
+    # Load meta Excel
+    if not project.meta_file:
+        return Response({"error": "Meta Excel not found"}, status=400)
     meta_path = os.path.join(settings.MEDIA_ROOT, project.meta_file)
-    meta_df = pd.read_excel(meta_path)
+    # Load both sheets
+    xls = pd.ExcelFile(meta_path)
+    meta_df = pd.read_excel(xls, "metadata")
+
+    if "value_label" in xls.sheet_names:
+        value_df = pd.read_excel(xls, "value_label")
+        # normalize column names
+        value_df.columns = [c.strip().lower() for c in value_df.columns]
+
+        # Forward fill variable column (in case blank rows after first variable)
+        if "variable" in value_df.columns:
+            value_df["variable"] = value_df["variable"].ffill()
+
+        # Build dict → { "Q1": {1: "Male", 2: "Female"}, "Q2": {1: "Yes", 2: "No"} }
+        value_label_dict = {}
+        for var, group in value_df.groupby("variable"):
+            mapping = dict(zip(group["value"], group["label"]))
+            value_label_dict[var] = mapping
+    else:
+        value_label_dict = {}
 
     output = []
 
@@ -452,11 +603,11 @@ def new_crosstab(request, project_id):
     for _, row in sc_rows.iterrows():
         var_name = str(row["Var_Name"]).strip()
         table_title = str(row["Table_Title"])
-        value_labels = meta.variable_value_labels.get(var_name, {})
+        value_labels =value_label_dict.get(var_name, {})
 
         if topbreak_title:
             table_data = crosstab_single_choice_with_topbreak(
-                df, var_name, value_labels, topbreak_title, meta, meta_df, sig_level=sig_level)
+                df, var_name, value_labels, topbreak_title, value_label_dict, meta_df, sig_level=sig_level)
         else:
             table_data = crosstab_single_choice(df, var_name, value_labels)
 
@@ -476,10 +627,10 @@ def new_crosstab(request, project_id):
 
         if topbreak_title:
             table_data = crosstab_multi_response_with_topbreak(
-                df, grp, group_rows, meta, topbreak_title, meta_df, sig_level=sig_level
+                df, grp, group_rows, value_label_dict, topbreak_title, meta_df, sig_level=sig_level
             )
         else:
-            table_data = crosstab_multi_response(df, grp, group_rows, meta)
+            table_data = crosstab_multi_response(df, grp, group_rows, value_label_dict)
 
         output.append({
             "question": table_title,
@@ -496,7 +647,7 @@ def new_crosstab(request, project_id):
         table_title = str(row["Table_Title"])
 
         if topbreak_title:
-            table_data = crosstab_numeric_with_topbreak(df, var_name, topbreak_title, meta, meta_df,sig_level=sig_level)
+            table_data = crosstab_numeric_with_topbreak(df, var_name, topbreak_title, value_label_dict, meta_df,sig_level=sig_level)
         else:
             table_data = crosstab_numeric(df, var_name)
 
@@ -534,10 +685,10 @@ def new_crosstab(request, project_id):
 
         if topbreak_title:
             table_data = crosstab_single_response_grid_with_topbreak(
-                df, grp, group_rows, meta, topbreak_title, meta_df
+                df, grp, group_rows, value_label_dict, topbreak_title, meta_df
             )
         else:
-            table_data = crosstab_single_response_grid(df, grp, group_rows, meta)
+            table_data = crosstab_single_response_grid(df, grp, group_rows, value_label_dict)
 
         output.append({
             "question": table_title,
@@ -546,5 +697,28 @@ def new_crosstab(request, project_id):
             "data": table_data,
             "crosstab_type":"new"
         })
+
+    # --- Multi Response Grid ---
+    mrg_groups = meta_df[meta_df["Question_Type"].str.upper() == "MRG"]["Var_Grp"].unique()
+    for grp in mrg_groups:
+        group_rows = meta_df[meta_df["Var_Grp"] == grp]
+        table_title = group_rows.iloc[0]["Table_Title"]
+
+        if topbreak_title:
+            table_data = crosstab_multi_response_grid_with_topbreak(
+                df, grp, group_rows, value_label_dict, meta_df, topbreak_title
+            )
+        else:
+            table_data = crosstab_multi_response_grid(
+                df, grp, group_rows, value_label_dict
+            )
+
+        output.append({
+            "question": table_title,
+            "var_group": grp,
+            "type": "MRG",
+            "data": table_data,
+            "crosstab_type": "new"
+        })    
 
     return Response(output)

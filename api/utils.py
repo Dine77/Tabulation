@@ -7,12 +7,13 @@ import math
 import re
 import numpy as np
 import os
-import pandas as pd
 from django.conf import settings
 from .models import Project
 import math
 from scipy.stats import norm
 import numpy as np
+from collections import OrderedDict
+import pandas as pd
 
 def log_activity(user, action, project_name="", file_name="", details=""):
     ActivityLog(
@@ -227,29 +228,6 @@ def get_topbreak_letters(n: int):
     return letters
 
 
-def build_topbreak_columns(df, topbreak: str, meta):
-    """
-    Returns:
-      cols = [("Total", df), ("Finance", df1), ("Tech", df2)...]
-      columns = [{"label": "Total", "letter": ""}, {"label": "Finance", "letter": "A"}, ...]
-    """
-    cols = [("Total", df)]
-
-    if topbreak in df.columns:
-        for tb_value, tb_df in df.groupby(topbreak):
-            # Map code → label if available
-            label = str(tb_value)
-            if topbreak in meta.variable_value_labels:
-                label = meta.variable_value_labels[topbreak].get(tb_value, tb_value)
-            cols.append((label, tb_df))
-
-    # assign A/B/C… letters (skip Total)
-    letters = get_topbreak_letters(len(cols) - 1)
-    columns = [{"label": "Total", "letter": ""}]
-    for i, (col_name, _) in enumerate(cols[1:]):
-        columns.append({"label": col_name, "letter": letters[i]})
-
-    return cols, columns
     
 def build_topbreak(df, meta_df, topbreak_title, meta):
     """
@@ -282,8 +260,8 @@ def build_topbreak(df, meta_df, topbreak_title, meta):
 
         for tb_value, tb_df in df.groupby(var_name):
             label = str(tb_value)
-            if var_name in meta.variable_value_labels:
-                label = meta.variable_value_labels[var_name].get(tb_value, tb_value)
+            if var_name in meta:
+                label = meta[var_name].get(tb_value, tb_value)
             cols.append((label, tb_df))
 
         # generate letters for ALL columns including Total
@@ -469,57 +447,101 @@ def crosstab_single_choice_with_topbreak(
 
 # ---------- Multi Response ----------
 def crosstab_multi_response_with_topbreak(
-    df, var_group, group_rows, meta, topbreak_title, meta_df, sig_level=95
+    df, var_group, group_rows, value_label_dict, topbreak_title, meta_df, sig_level=95
 ):
-    cols, columns = build_topbreak(df, meta_df, topbreak_title, meta)
+    cols, columns = build_topbreak(df, meta_df, topbreak_title, value_label_dict)
     rows = []
 
-    # Letters for columns (A = Total, but we’ll skip it in sig tests)
+    # Letters for columns (A = Total, but skip for sig tests)
     col_letters = [c.get("letter") if isinstance(c, dict) else chr(65+i) for i, c in enumerate(columns)]
 
-    thresholds = {80: 1.28, 90: 1.64, 95: 1.96, 99: 2.58,    "None": None}
-    z_threshold = thresholds.get(sig_level,None)
+    thresholds = {80: 1.28, 90: 1.64, 95: 1.96, 99: 2.58, "None": None}
+    z_threshold = thresholds.get(sig_level, None)
 
-    for _, row in group_rows.iterrows():
-        var = row["Var_Name"]
-        label_col = "Option_Text" if "Option_Text" in row.index else "Var_Label"
-        label = row[label_col]
-        row_data = {"label": label, "cells": []}
-        col_stats = []
+    vars_in_group = group_rows["Var_Name"].tolist()
+    group_df = df[vars_in_group]
 
-        # Build cells (include Total in display, but skip in sig test later)
-        for col_name, sub_df in cols:
-            if var not in sub_df:
-                base, count = 0, 0
-            else:
+    # --- Detect type (binary vs nonbinary) ---
+    unique_vals = pd.unique(group_df.fillna(0).values.ravel())
+    unique_vals = [int(v) for v in unique_vals if v != 0]
+    mr_type = "binary" if not unique_vals or max(unique_vals) == 1 else "nonbinary"
+
+    # --- Binary MR (0/1) ---
+    if mr_type == "binary":
+        for _, row in group_rows.iterrows():
+            var = row["Var_Name"]
+            label_map = value_label_dict.get(var, {})
+            label = label_map.get(1, var)
+
+            row_data, col_stats = {"label": label, "cells": []}, []
+
+            for col_name, sub_df in cols:
                 base = sub_df[var].notna().sum()
-                count = sub_df[var].sum()
-            pct = f"{(count / base * 100) if base > 0 else 0}%" if base > 0 else "0%"
-            col_stats.append((count, base))
-            row_data["cells"].append({"count": int(count), "pct": pct})
+                count = int((sub_df[var] == 1).sum())
+                pct = f"{(count / base * 100):.1f}%" if base > 0 else "0%"
+                col_stats.append((count, base))
+                row_data["cells"].append({"count": count, "pct": pct})
 
-        if z_threshold is not None:
-            # 🔹 Sig tests (skip index 0 → Total)
-            for i in range(1, len(row_data["cells"])):
-                for j in range(i + 1, len(row_data["cells"])):
-                    p_count, p_base = col_stats[i]
-                    c_count, c_base = col_stats[j]
-                    sig = run_sig_test(p_count, p_base, c_count, c_base, z_threshold)
+            # sig tests
+            if z_threshold is not None:
+                for i in range(1, len(row_data["cells"])):
+                    for j in range(i+1, len(row_data["cells"])):
+                        p_count, p_base = col_stats[i]
+                        c_count, c_base = col_stats[j]
+                        sig = run_sig_test(p_count, p_base, c_count, c_base, z_threshold)
+                        if sig == "UP":
+                            row_data["cells"][j].setdefault("sig", []).append(col_letters[i])
+                        elif sig == "DOWN":
+                            row_data["cells"][i].setdefault("sig", []).append(col_letters[j])
 
-                    if sig == "UP":
-                        row_data["cells"][j].setdefault("sig", []).append(col_letters[i])
-                    elif sig == "DOWN":
-                        row_data["cells"][i].setdefault("sig", []).append(col_letters[j])
+            for c in row_data["cells"]:
+                if "sig" in c:
+                    c["sig"] = "".join(c["sig"])
 
-        # Convert sig list → "B C" etc
-        for c in row_data["cells"]:
-            if "sig" in c:
-                c["sig"] = "".join(c["sig"])
+            rows.append(row_data)
 
-        rows.append(row_data)
+    # --- Non-binary MR (floating/fixed) ---
+    else:
+        # merge all labels across vars
+        label_map = {}
+        for var in vars_in_group:
+            label_map.update(value_label_dict.get(var, {}))
+
+        all_values = group_df.values.ravel()
+        all_values = pd.Series(all_values).dropna().astype(int)
+        all_values = all_values[all_values != 0]
+        codes = sorted(all_values.unique())
+
+        for code in codes:
+            label = label_map.get(code, str(code))
+            row_data, col_stats = {"label": label, "cells": []}, []
+
+            for col_name, sub_df in cols:
+                base = sub_df[vars_in_group].notna().any(axis=1).sum()
+                count = int((sub_df[vars_in_group] == code).sum().sum())  # count occurrences of code
+                pct = f"{(count / base * 100):.1f}%" if base > 0 else "0%"
+                col_stats.append((count, base))
+                row_data["cells"].append({"count": count, "pct": pct})
+
+            # sig tests
+            if z_threshold is not None:
+                for i in range(1, len(row_data["cells"])):
+                    for j in range(i+1, len(row_data["cells"])):
+                        p_count, p_base = col_stats[i]
+                        c_count, c_base = col_stats[j]
+                        sig = run_sig_test(p_count, p_base, c_count, c_base, z_threshold)
+                        if sig == "UP":
+                            row_data["cells"][j].setdefault("sig", []).append(col_letters[i])
+                        elif sig == "DOWN":
+                            row_data["cells"][i].setdefault("sig", []).append(col_letters[j])
+
+            for c in row_data["cells"]:
+                if "sig" in c:
+                    c["sig"] = "".join(c["sig"])
+
+            rows.append(row_data)
 
     return {"columns": columns, "rows": rows}
-
 
 
 
@@ -675,7 +697,7 @@ def crosstab_single_response_grid_with_topbreak(
         tb_var = str(top_rows.iloc[0]["Var_Name"]).strip()
         if tb_var not in df.columns:
             return crosstab_single_response_grid(df, var_group, group_rows, meta)
-        value_labels = meta.variable_value_labels.get(tb_var, {})
+        value_labels = meta.get(tb_var, {})
         for sv, slabel in value_labels.items():
             tb_df = df[df[tb_var] == sv]
             sub_table = crosstab_single_response_grid(tb_df, var_group, group_rows, meta)
@@ -724,7 +746,6 @@ def crosstab_single_response_grid_with_topbreak(
     rows = []
 
     if str(add_type).lower() == "nps":
-        print("Add Type:", add_type)
         # --- Distribution 0–10 ---
         ordered_codes = sorted(freq.index.tolist())  # ensure only observed values 0..10
         for code in ordered_codes:
@@ -779,48 +800,73 @@ def safe_number(x):
     return int(x) if isinstance(x, (int, float)) and x == int(x) else x
 
 
-def crosstab_multi_response(df, var_group, meta_rows, meta):
+def crosstab_multi_response(df, var_group, meta_rows, value_label_dict):
     results = {}
 
     vars_in_group = meta_rows["Var_Name"].tolist()
     base = int(df[vars_in_group].notna().any(axis=1).sum())
+    group_df = df[vars_in_group]
 
-    merged = {}
+    # --- Detect type (binary / nonbinary) ---
+    unique_vals = pd.unique(group_df.fillna(0).values.ravel())
+    unique_vals = [int(v) for v in unique_vals if v != 0]
 
-    for _, r in meta_rows.iterrows():
-        var_name = r["Var_Name"]
-        raw_label = r.get("Var_Label")
-        if pd.isna(raw_label) or str(raw_label).strip() == "" or str(raw_label).lower() == "nan":
-            var_label = var_name
-        else:
-            var_label = str(raw_label).strip()
-
-        if var_name not in df.columns:
-            continue
-
-        count = int(df[var_name].apply(lambda x: 1 if pd.notna(x) and x != 0 else 0).sum())
-        pct = (count / base) * 100 if base > 0 else 0.0
-
-        key = var_label.lower()
-        if key not in merged:
-            merged[key] = {"label": var_label, "count": 0, "pct": 0.0}
-        merged[key]["count"] += count
-        merged[key]["pct"] = f"{pct}%"
+    if not unique_vals:
+        mr_type = "binary"   # fallback
+    else:
+        mr_type = "binary" if max(unique_vals) == 1 else "nonbinary"
 
     rows = []
-    seen = set()
+
+    # --- Binary handling ---
+    if mr_type == "binary":
+        for var_name in vars_in_group:
+            if var_name not in df.columns:
+                continue
+            count_val = int((df[var_name] == 1).sum())
+
+            # ✅ take label for code=1 from value_label_dict[var_name]
+            label_map = value_label_dict.get(var_name, {})
+            label = label_map.get(1, var_name)
+
+            pct = f"{(count_val/base)*100:.1f}%" if base > 0 else "0%"
+            rows.append({"label": str(label), "count": int(count_val), "pct": pct})
+
+    # --- Non-binary handling ---
+    else:
+        all_values = group_df.values.ravel()
+        all_values = pd.Series(all_values).dropna().astype(int)
+        all_values = all_values[all_values != 0]   # ✅ drop zeros
+
+        counts = all_values.value_counts().to_dict()
+
+        # ✅ merge value labels across all variables in this group
+        label_map = {}
+        for var in vars_in_group:
+            label_map.update(value_label_dict.get(var, {}))
+
+        for code, count_val in counts.items():
+            label = label_map.get(code, str(code))
+            pct = f"{(count_val/base)*100:.1f}%" if base > 0 else "0%"
+            rows.append({"label": str(label), "count": int(count_val), "pct": pct})
+
+    # --- Preserve metadata order ---
+    ordered_rows, seen = [], set()
     for _, r in meta_rows.iterrows():
         label = str(r.get("Var_Label", r.get("Var_Name", ""))).strip()
-        key = label.lower()
-        if key in merged and key not in seen:
-            rows.append(merged[key])
-            seen.add(key)
+        for row in rows:
+            if row["label"] == label and label not in seen:
+                ordered_rows.append(row)
+                seen.add(label)
 
-    rows = merge_others(rows, base)   # ✅ merge here
+    if not ordered_rows:
+        ordered_rows = rows
 
-    results["Total"] = {"base": base, "rows": rows}
+    # --- Merge others if needed ---
+    ordered_rows = merge_others(ordered_rows, base)
+
+    results["Total"] = {"base": base, "rows": ordered_rows}
     return results
-
 
 def crosstab_numeric(df, var_name):
     series = df[var_name].dropna()
@@ -865,7 +911,7 @@ def format_code_label(code, value_labels):
     return f"[{code}] {value_labels.get(code, str(code))}"
 
 
-def crosstab_single_response_grid(df, var_group, meta_rows, meta):
+def crosstab_single_response_grid(df, var_group, meta_rows, value_label_dict):
     attributes = []
     attr_data = {}
     total_base = 0
@@ -891,8 +937,9 @@ def crosstab_single_response_grid(df, var_group, meta_rows, meta):
             "series": df[var_name].dropna()
         }
 
-    first_var = meta_rows.iloc[0]["Var_Name"]
-    value_labels = meta.variable_value_labels.get(first_var, {})
+        first_var = meta_rows.iloc[0]["Var_Name"]
+        value_labels = value_label_dict.get(var_name, {})
+
 
     # Auto-detect type if missing
     if not add_type:
@@ -1054,4 +1101,286 @@ def load_project_meta(project_id):
     except Exception as e:
         return None, str(e)
     
+# ---------- Multi Response Grid ----------
+import pandas as pd
+from collections import OrderedDict
 
+
+def detect_mr_type(var_names, value_label_dict):
+    """
+    Detect MR type using meta value labels (preferred over df values).
+    Returns 'binary' if only 0/1, else 'nonbinary'.
+    """
+    codes = set()
+    for var in var_names:
+        if var in value_label_dict:
+            codes.update(value_label_dict[var].keys())
+
+    # Remove "No" codes (0) if present
+    codes = {c for c in codes if isinstance(c, (int, float)) and c != 0}
+
+    if not codes:
+        return "binary"
+
+    return "binary" if max(codes) <= 1 else "nonbinary"
+
+
+def crosstab_multi_response_grid(df, var_group, group_rows, value_label_dict):
+    """
+    Multi Response Grid (MRG) Crosstab
+    Handles both binary and non-binary (floating/fixed) coding.
+    Uses value_label_dict to detect type dynamically.
+    """
+
+    results = {}    
+    vars_in_group = group_rows["Var_Name"].tolist()
+    base = int(df[vars_in_group].notna().any(axis=1).sum())
+
+    # --- Step 1: detect type using meta ---
+    mr_type = detect_mr_type(vars_in_group, value_label_dict)
+    print("Detected MRG Type:", mr_type)
+
+    # --- Step 2: figure out columns (categories) ---
+    # Each "row group" like E12_R1, E12_R2... corresponds to a column
+    columns = []
+    col_index_map = {}
+    for idx, (grp, subdf) in enumerate(group_rows.groupby("sub_var_grp")):
+        # Use Var_Label (like Electronics, Clothing, …)
+        col_label = subdf.iloc[0].get("Var_Label", grp)
+        columns.append(col_label)
+        for var_name in subdf["Var_Name"]:
+            col_index_map[var_name] = idx
+
+    # --- Step 3: aggregate into rows ---
+    row_map = OrderedDict()
+
+    if mr_type == "binary":
+        # Each cell == code 1 in that var
+        for var_name in vars_in_group:
+            if var_name not in df.columns:
+                continue
+            col_idx = col_index_map[var_name]
+            label_map = value_label_dict.get(var_name, {})
+            label = label_map.get(1, var_name)  # ✅ pick label for code 1
+
+            count = int((df[var_name] == 1).sum())
+
+            if label not in row_map:
+                row_map[label] = [0] * len(columns)
+            row_map[label][col_idx] = count
+
+    else:  # --- non-binary ---
+        all_values = []
+        for var_name in vars_in_group:
+            if var_name not in df.columns:
+                continue
+            col_idx = col_index_map[var_name]
+            col = df[var_name].dropna().astype(int)
+
+            label_map = value_label_dict.get(var_name, {})
+            for code, label in label_map.items():
+                if code == 0:   # skip "No"
+                    continue
+                count = int((col == code).sum())
+                if label not in row_map:
+                    row_map[label] = [0] * len(columns)
+                row_map[label][col_idx] += count   # ✅ += because multiple codes can exist in same col
+
+
+    # --- Step 4: build rows (Total + Brands + Count) ---
+    rows = []
+
+    # Total row
+    total_row = {"label": "Total", "cells": []}
+    for _ in columns:
+        total_row["cells"].append({"count": base, "pct": "100%"})
+    rows.append(total_row)
+
+    # Brand rows
+    for label, counts in row_map.items():
+        cells = []
+        for count in counts:
+            pct = f"{(count / base * 100):.1f}%" if base > 0 else "0%"
+            cells.append({"count": count, "pct": pct})
+        rows.append({"label": label, "cells": cells})
+
+    # Count row (average no. of responses per respondent per column)
+    count_row = {"label": "Count", "cells": []}
+    for col_idx in range(len(columns)):
+        total_responses = sum(row_map[label][col_idx] for label in row_map)
+        avg = round(total_responses / base, 2) if base > 0 else 0
+        count_row["cells"].append({"count": avg})
+    rows.append(count_row)
+
+    results["Matrix"] = {
+        "base": base,
+        "columns": columns,
+        "rows": rows,
+        "type": mr_type
+    }
+
+    return results
+
+# ---------- Multi Response Grid with Topbreak ----------
+def crosstab_multi_response_grid_with_topbreak(
+    df, var_group, group_rows, value_label_dict, meta_df,
+    topbreak_title=None, sig_level=95
+):
+    from collections import OrderedDict
+    import math
+
+    # --- Z-test (no Bonferroni inside) ---
+    def run_sig_test(p_count, p_base, c_count, c_base, z_threshold):
+        if p_base == 0 or c_base == 0:
+            return False
+        p1, p2 = p_count / p_base, c_count / c_base
+        p = (p_count + c_count) / (p_base + c_base)  # pooled proportion
+        se = math.sqrt(p * (1 - p) * ((1 / p_base) + (1 / c_base)))
+        if se == 0:
+            return False
+        z = abs((p1 - p2) / se)
+        return z >= z_threshold
+
+    # --- Map topbreak_title -> Var_Name ---
+    topbreak_var = None
+    if topbreak_title:
+        topbreak_row = meta_df[meta_df["Table_Title"] == topbreak_title]
+        topbreak_var = topbreak_row.iloc[0]["Var_Name"] if not topbreak_row.empty else topbreak_title
+
+    thresholds = {80: 1.28, 90: 1.64, 95: 1.96, 99: 2.58, "None": None}
+    z_threshold = thresholds.get(sig_level, None)
+
+    # --- Build splits ---
+    if topbreak_var:
+        tb_label_map = value_label_dict.get(topbreak_var, {})
+        topbreak_values = sorted(df[topbreak_var].dropna().unique())
+        splits = [("Total", df)] + [
+            (tb_label_map.get(val, str(val)), df[df[topbreak_var] == val])
+            for val in topbreak_values
+        ]
+    else:
+        splits = [("Total", df)]
+
+    # Assign letters
+    col_defs = [
+        {"label": tb_label, "letter": chr(65 + idx)}
+        for idx, (tb_label, _) in enumerate(splits)
+    ]
+
+    matrix_list = []
+
+    # --- Pass 1: build matrices (counts & % only) ---
+    for tb_idx, (tb_label, sub_df) in enumerate(splits):
+        vars_in_group = group_rows["Var_Name"].tolist()
+        base = int(sub_df[vars_in_group].notna().any(axis=1).sum())
+
+        group_df = sub_df[vars_in_group]
+        unique_vals = pd.unique(group_df.fillna(0).values.ravel())
+        unique_vals = [int(v) for v in unique_vals if str(v).isdigit()]
+        mr_type = "binary" if max(unique_vals, default=0) <= 1 else "nonbinary"
+
+        columns, col_index_map = [], {}
+        for idx, (grp, subgrp) in enumerate(group_rows.groupby("sub_var_grp")):
+            col_label = subgrp.iloc[0].get("Var_Label", grp)
+            columns.append(col_label)
+            for var_name in subgrp["Var_Name"]:
+                col_index_map[var_name] = idx
+
+        row_map = OrderedDict()
+        if mr_type == "binary":
+            for var_name in vars_in_group:
+                if var_name not in sub_df.columns:
+                    continue
+                col_idx = col_index_map[var_name]
+                label_map = value_label_dict.get(var_name, {})
+                label = label_map.get(1, var_name)
+                count = int((sub_df[var_name] == 1).sum())
+                if label not in row_map:
+                    row_map[label] = [0] * len(columns)
+                row_map[label][col_idx] = count
+        else:
+            for var_name in vars_in_group:
+                if var_name not in sub_df.columns:
+                    continue
+                col_idx = col_index_map[var_name]
+                col = sub_df[var_name].dropna().astype(int)
+                label_map = value_label_dict.get(var_name, {})
+                for code, label in label_map.items():
+                    if code == 0:
+                        continue
+                    count = int((col == code).sum())
+                    if label not in row_map:
+                        row_map[label] = [0] * len(columns)
+                    row_map[label][col_idx] = count
+
+        rows = []
+        # Total row
+        total_row = {
+            "label": "Total",
+            "cells": [{"count": base, "pct": "100%"} for _ in columns],
+        }
+        rows.append(total_row)
+
+        # Brand rows
+        for label, counts in row_map.items():
+            cells = []
+            for count in counts:
+                pct = f"{(count / base * 100):.1f}%" if base > 0 else "0%"
+                cells.append({"count": count, "pct": pct})
+            rows.append({"label": label, "cells": cells})
+
+        # Count row
+        count_row = {"label": "Count", "cells": []}
+        for col_idx in range(len(columns)):
+            total_responses = sum(row_map[label][col_idx] for label in row_map)
+            avg = round(total_responses / base, 2) if base > 0 else 0
+            count_row["cells"].append({"count": avg})
+        rows.append(count_row)
+
+        matrix_list.append({
+            "topbreak_label": tb_label,
+            "Matrix": {
+                "base": base,
+                "columns": columns,
+                "rows": rows,
+                "type": mr_type,
+            },
+        })
+
+    # --- Pass 2: add sig letters ---
+    if z_threshold:
+        n_comparisons = len(matrix_list) - 1  # exclude Total
+        # Bonferroni-adjusted threshold
+        adj_threshold = z_threshold * (n_comparisons ** 0.5)
+
+        for tb_idx, matrix in enumerate(matrix_list):
+            if tb_idx == 0:  # skip Total
+                continue
+            rows = matrix["Matrix"]["rows"]
+            for row in rows:
+                if row["label"] in ("Total", "Count"):
+                    continue
+                for col_idx, cell in enumerate(row["cells"]):
+                    sig_letters = []
+                    for other_idx, other_matrix in enumerate(matrix_list):
+                        if other_idx == 0 or other_idx == tb_idx:
+                            continue
+                        # match row by label
+                        other_row = next(
+                            (r for r in other_matrix["Matrix"]["rows"] if r["label"] == row["label"]),
+                            None
+                        )
+                        if not other_row:
+                            continue
+                        other_cell = other_row["cells"][col_idx]
+
+                        if run_sig_test(
+                            other_cell["count"], other_matrix["Matrix"]["base"],
+                            cell["count"], matrix["Matrix"]["base"],
+                            adj_threshold
+                        ):
+                            sig_letters.append(col_defs[other_idx]["letter"])
+                    if sig_letters:
+                        cell["sig"] = "".join(sorted(sig_letters))
+
+    return {"matrix": matrix_list, "columns": col_defs}

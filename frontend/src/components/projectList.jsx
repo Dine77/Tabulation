@@ -269,7 +269,7 @@ function ProjectList() {
                 type="file"
                 onChange={(e) => setFile(e.target.files[0])}
                 className="w-full mb-3"
-                accept=".sav"
+                accept=".sav,.xlsx,.xls"  // 👈 accept SPSS and Excel files
               />
               <div className="flex justify-end gap-3">
                 <button
