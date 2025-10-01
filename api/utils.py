@@ -1348,10 +1348,10 @@ def crosstab_multi_response_grid_with_topbreak(
         })
 
     # --- Pass 2: add sig letters ---
+    # --- Pass 2: add sig letters ---
     if z_threshold:
         n_comparisons = len(matrix_list) - 1  # exclude Total
-        # Bonferroni-adjusted threshold
-        adj_threshold = z_threshold * (n_comparisons ** 0.5)
+        adj_threshold = z_threshold  # simpler, not inflated
 
         for tb_idx, matrix in enumerate(matrix_list):
             if tb_idx == 0:  # skip Total
@@ -1365,7 +1365,6 @@ def crosstab_multi_response_grid_with_topbreak(
                     for other_idx, other_matrix in enumerate(matrix_list):
                         if other_idx == 0 or other_idx == tb_idx:
                             continue
-                        # match row by label
                         other_row = next(
                             (r for r in other_matrix["Matrix"]["rows"] if r["label"] == row["label"]),
                             None
@@ -1375,12 +1374,13 @@ def crosstab_multi_response_grid_with_topbreak(
                         other_cell = other_row["cells"][col_idx]
 
                         if run_sig_test(
-                            other_cell["count"], other_matrix["Matrix"]["base"],
                             cell["count"], matrix["Matrix"]["base"],
+                            other_cell["count"], other_matrix["Matrix"]["base"],
                             adj_threshold
                         ):
                             sig_letters.append(col_defs[other_idx]["letter"])
                     if sig_letters:
                         cell["sig"] = "".join(sorted(sig_letters))
+
 
     return {"matrix": matrix_list, "columns": col_defs}

@@ -451,7 +451,10 @@ function CrosstabPage() {
     // 🔹 Case 1: SRG → array of topbreaks
     if (Array.isArray(matrixObj)) {
       return (
-        <div id={`matrix_${groupIdx}`} className="bg-white border rounded-lg shadow p-4 mb-6">
+        <div
+          id={`matrix_${groupIdx}`}
+          className="bg-white border rounded-lg shadow p-4 mb-6"
+        >
           <div className="flex justify-between items-center mb-3">
             <div className="text-green-700 font-semibold">{question}</div>
             <button className="text-sm text-blue-600 hover:underline">Export</button>
@@ -463,50 +466,51 @@ function CrosstabPage() {
 
             const tableKey = `${tableKeyBase}_sub${si}`;
 
-            // normalize columns
-            const cols = (matrix.columns || []).map((c) =>
-              typeof c === "string" ? { label: c, letter: "" } : c
+            // ✅ matrix.columns are plain strings (Exercise, Reading…)
+            const catCols = (matrix.columns || []).map((c) =>
+              typeof c === "string" ? { label: c } : c
             );
 
             const rows = getSortedRows(matrix, tableKey);
 
             return (
               <div key={si} className="mb-6">
-                <div className="text-blue-600 font-bold mb-2">{sub.topbreak_label}</div>
+                <div className="text-blue-600 font-bold mb-2">
+                  {sub.topbreak_label}
+                </div>
 
                 <div className="overflow-x-auto">
                   <table className="min-w-full border-collapse text-xs">
                     <thead className="bg-gray-100">
                       <tr>
                         <th className="border px-3 py-2 text-left bg-gray-200">Scale</th>
-                        {cols.map((c, ci) => (
+                        {catCols.map((c, ci) => (
                           <th key={ci} className="border px-3 py-2 text-center">
-                            {c.letter && (
-                              <span className="text-blue-600 font-bold mr-1">{c.letter}</span>
-                            )}
-                            {c.label}
+                            <span>{c.label?.trim()}</span>
                           </th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {rows.map((r, ri) => (
-                        <tr key={ri} className={ri % 2 ? "bg-gray-50" : "bg-white"}>
+                        <tr
+                          key={ri}
+                          className={ri % 2 ? "bg-gray-50" : "bg-white"}
+                        >
                           <td className="border px-3 py-2 font-semibold">{r.label}</td>
                           {r.cells?.map((cell, ci) => (
                             <td key={ci} className="border px-3 py-2 text-center">
                               <div className="flex flex-col items-center">
+                                {/* ✅ Percent + sig letters */}
                                 <span>
-                                  {cell.pct
-                                    ? `${Math.round(parseFloat(cell.pct))}%`
-                                    : ""}
+                                  {cell.pct ? `${Math.round(parseFloat(cell.pct))}%` : ""}
+                                  {cell.sig && (
+                                    <span className="text-red-500 text-[10px] font-bold ml-1">
+                                      {cell.sig}
+                                    </span>
+                                  )}
                                 </span>
-                                {/* sig test flag if present */}
-                                {cell.sig && (
-                                  <span className="text-red-500 text-[10px] font-bold">
-                                    {cell.sig}
-                                  </span>
-                                )}
+                                {/* ✅ Count always below */}
                                 <span className="text-gray-500">{cell.count}</span>
                               </div>
                             </td>
@@ -526,7 +530,7 @@ function CrosstabPage() {
     // 🔹 Case 2: Normal → single object
     const tableKey = `${tableKeyBase}_Matrix`;
 
-    // normalize columns (string → object)
+    // normalize columns
     const cols = (matrixObj.columns || []).map((c) =>
       typeof c === "string" ? { label: c, letter: "" } : c
     );
@@ -534,7 +538,10 @@ function CrosstabPage() {
     const rows = getSortedRows(matrixObj, tableKey);
 
     return (
-      <div id={`matrix_${groupIdx}`} className="bg-white border rounded-lg shadow p-4 mb-6">
+      <div
+        id={`matrix_${groupIdx}`}
+        className="bg-white border rounded-lg shadow p-4 mb-6"
+      >
         <div className="flex justify-between items-center mb-3">
           <div className="text-green-700 font-semibold">{question}</div>
           <button className="text-sm text-blue-600 hover:underline">Export</button>
@@ -550,7 +557,7 @@ function CrosstabPage() {
                     {c.letter && (
                       <span className="text-blue-600 font-bold mr-1">{c.letter}</span>
                     )}
-                    {c.label}
+                    <span>{c.label?.trim()}</span>
                   </th>
                 ))}
               </tr>
@@ -562,18 +569,16 @@ function CrosstabPage() {
                   {r.cells?.map((cell, ci) => (
                     <td key={ci} className="border px-3 py-2 text-center">
                       <div className="flex flex-col items-center">
-                        {/* ✅ Percent + Sig flag together */}
+                        {/* ✅ Percent + sig letters */}
                         <span>
-                          {cell.pct
-                            ? `${Math.round(parseFloat(cell.pct))}%`
-                            : ""}
+                          {cell.pct ? `${Math.round(parseFloat(cell.pct))}%` : ""}
                           {cell.sig && (
-                            <span className="text-red-500 text-[10px] font-bold">
+                            <span className="text-red-500 text-[10px] font-bold ml-1">
                               {cell.sig}
                             </span>
                           )}
                         </span>
-                        {/* Count below */}
+                        {/* ✅ Count always below */}
                         <span className="text-gray-500">{cell.count}</span>
                       </div>
                     </td>
