@@ -721,10 +721,27 @@ def crosstab_single_response_grid_with_topbreak(
     results.insert(0, {"topbreak_label": "Total", **total_table})
 
     # ✅ Build column labels with letters (A, B, C...)
-    letters = get_topbreak_letters(len(results))
-    columns = []
-    for i, r in enumerate(results):
-        columns.append({"label": r["topbreak_label"], "letter": letters[i]})
+    for r in results:
+        matrix_cols = r["Matrix"].get("columns", [])
+
+        # Generate enough letters for the number of columns
+        letters = get_topbreak_letters(len(matrix_cols))
+
+        new_cols = []
+        for j, col in enumerate(matrix_cols):
+            # handle dict or string column labels
+            if isinstance(col, dict):
+                col_label = col.get("label", str(col))
+            else:
+                col_label = str(col)
+            
+            new_cols.append({
+                "label": col_label.strip(),
+                "letter": letters[j]
+            })
+
+        # ✅ update the columns in-place
+        r["Matrix"]["columns"] = new_cols
 
     # ✅ Run sig test per cell
     if sig_level and sig_level != "none":
@@ -732,7 +749,7 @@ def crosstab_single_response_grid_with_topbreak(
 
     merged_summaries = build_topbreak_summaries(df, var_group, group_rows, meta, results)
 
-    return {"matrix": results, "columns": columns, **merged_summaries}
+    return {"matrix": results, **merged_summaries}
 
 
 

@@ -249,7 +249,6 @@ function CrosstabPage() {
 
   // -------- Sorting helpers ----------
   const handleSort = (tableKey, colIndex) => {
-    console.log("Sorting", tableKey, colIndex);
     setSortConfigs((prev) => {
       const prevCfg = prev[tableKey] || { colIndex: null, direction: "none" };
       if (prevCfg.colIndex === colIndex) {
@@ -486,6 +485,9 @@ function CrosstabPage() {
                         <th className="border px-3 py-2 text-left bg-gray-200">Scale</th>
                         {catCols.map((c, ci) => (
                           <th key={ci} className="border px-3 py-2 text-center">
+                            {c.letter && (
+                              <span className="text-blue-600 font-bold mr-1">{c.letter}</span>
+                            )}
                             <span>{c.label?.trim()}</span>
                           </th>
                         ))}
@@ -1035,20 +1037,20 @@ function CrosstabPage() {
             if (grp.add_type === "NPS") {
               card = renderNPSCard(payload.NPS, grp.question, `matrix_${gIdx}`);
             }
-            else if (grp.type === "SRG" || grp.type === "MRG" && grp.crosstab_type === "new") {
+            else if ((grp.type === "SRG" || grp.type === "MRG") && grp.crosstab_type === "new") {
               // pass the *array* of matrices for SRG
               card = renderMatrixCard(grp.data.matrix, gIdx, `matrix_${gIdx}`, grp.question);
             }
-            else if (grp.type !== "SRG" || grp.type !== "MRG" && grp.crosstab_type === "new") {
+            else if ((grp.type !== "SRG" || grp.type !== "MRG") && grp.crosstab_type === "new") {
               // pass the *object* matrix for normal questions
               card = renderMatrixCard(grp.data, gIdx, `matrix_${gIdx}`, grp.question);
             }
-            else if (grp.type === "SRG" || grp.type === "MRG" && grp.data.Matrix) {
+            else if ((grp.type === "SRG" || grp.type === "MRG") && grp.data.Matrix) {
               // Quick Crosstab SRG
               card = renderQuickCrosstabCard(grp.data, gIdx, `matrix_${gIdx}`, grp.question, grp.type);
             }
             else if (grp.type === "SC" || grp.type === "MR" || grp.type === "NR") {
-              // Quick Crosstab SC/MR/NR
+              // Quick Crosstab SC/MR/NR             
               const total = grp.data.Total;
               card = renderQuickCrosstabCard(total, gIdx, `matrix_${gIdx}`, grp.question, grp.type);
             }
