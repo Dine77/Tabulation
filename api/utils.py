@@ -76,30 +76,6 @@ def run_sig_test(p_count, p_base, c_count, c_base, z_threshold=1.96):
         return "DOWN"  # significantly lower
     return None
 
-# ---------- Apply Sig Test to Table ----------
-# def apply_sig_tests_to_table(cols, rows, alpha=0.95):
-    # """
-    # Apply sig test to all pairs of columns except Total (col A).
-    # Each cell in rows will get a 'sig' key with UP/DOWN/None.
-    # """
-    # z_threshold = norm.ppf(alpha)  # e.g. 1.64 for 90%, 1.96 for 95%
-
-    # for i in range(1, len(cols)):   # 🔹 start from 1 → skip Total
-    #     base_i = cols[i][1].shape[0]
-
-    #     for j in range(i+1, len(cols)):
-    #         base_j = cols[j][1].shape[0]
-
-    #         for r in rows:
-    #             ci = r["cells"][i]
-    #             cj = r["cells"][j]
-
-    #             sig = run_sig_test(ci["count"], base_i, cj["count"], base_j, z_threshold)
-    #             if sig == "UP":
-    #                 ci["sig"] = chr(65 + j)   # mark against col letter
-    #             elif sig == "DOWN":
-    #                 cj["sig"] = chr(65 + i)
-
 
 # --- Common Helper for Merging "Others" ---
 def merge_others(rows, base, is_cells=False):
@@ -634,54 +610,78 @@ def get_var_name_from_title(meta_df, title):
 
 # ---------- Single Response Grid ----------
 def apply_sig_test_to_srg(results, sig_level=95):
-    """Apply sig tests to SRG cells across topbreaks."""
+    """Apply significance test to SRG tables (auto-detect single or multi-grid mode)."""
     thresholds = {80: 1.28, 90: 1.64, 95: 1.96, 99: 2.58}
-    z_threshold = thresholds.get(sig_level, 1.96)
+    z_threshold = thresholds.get(int(sig_level), 1.96)
 
-    # keep only valid sub-tables (with rows)
-    srg_tables = [res for res in results if "rows" in res]
+    # Auto-detect if nested Matrix structure exists
+    if results and isinstance(results[0], dict) and "Matrix" in results[0]:
+        srg_tables = [r["Matrix"] for r in results if "Matrix" in r and "rows" in r["Matrix"]]
+    else:
+        srg_tables = [r for r in results if "rows" in r]
 
     if not srg_tables:
+        print("⚠️ No SRG tables found for sig test.")
         return
 
-    n_cols = len(srg_tables[0]["rows"][0]["cells"])
-    col_letters = get_topbreak_letters(len(srg_tables))  # A=Total, B, C…
+    # --- Case 1: MULTI-TOPBREAK (compare across tables)
+    if len(srg_tables) > 1:
+        n_cols = len(srg_tables[0]["rows"][0]["cells"])
+        col_letters = get_topbreak_letters(len(srg_tables))  # A=Total, B, C...
 
-    # loop over rows
-    for ri in range(len(srg_tables[0]["rows"])):
-        for ci in range(n_cols):
-            col_stats = []
-            # collect (count, base) for this row+cell across splits
-            for res in srg_tables:
-                row = res["rows"][ri]
-                cell = row["cells"][ci]
-                count = cell.get("count", 0)
-                base = cell.get("base", row.get("base", 0))
-                col_stats.append((count, base))
+        for ri in range(len(srg_tables[0]["rows"])):
+            for ci in range(n_cols):
+                col_stats = []
+                for res in srg_tables:
+                    row = res["rows"][ri]
+                    cell = row["cells"][ci]
+                    count = cell.get("count", 0)
+                    base = cell.get("base", row.get("base", 0))
+                    col_stats.append((count, base))
 
-            # pairwise tests
-            for i in range(1, len(col_stats)):  # skip A=Total
-                for j in range(i + 1, len(col_stats)):
-                    p_count, p_base = col_stats[i]
-                    c_count, c_base = col_stats[j]
+                for i in range(1, len(col_stats)):  # skip A=Total
+                    for j in range(i + 1, len(col_stats)):
+                        p_count, p_base = col_stats[i]
+                        c_count, c_base = col_stats[j]
+                        sig = run_sig_test(p_count, p_base, c_count, c_base, z_threshold)
+                        if sig == "UP":
+                            srg_tables[j]["rows"][ri]["cells"][ci].setdefault("sig", []).append(col_letters[i])
+                        elif sig == "DOWN":
+                            srg_tables[i]["rows"][ri]["cells"][ci].setdefault("sig", []).append(col_letters[j])
+
+    # --- Case 2: SINGLE-GRID (compare across columns)
+    else:
+        table = srg_tables[0]
+        rows = table["rows"]
+        n_cols = len(rows[0]["cells"])
+        col_letters = get_topbreak_letters(n_cols)  # A, B, C for columns
+
+        for ri, row in enumerate(rows):
+            for i in range(n_cols - 1):
+                for j in range(i + 1, n_cols):
+                    p_cell = row["cells"][i]
+                    c_cell = row["cells"][j]
+                    p_count, p_base = p_cell.get("count", 0), p_cell.get("base", 0)
+                    c_count, c_base = c_cell.get("count", 0), c_cell.get("base", 0)
                     sig = run_sig_test(p_count, p_base, c_count, c_base, z_threshold)
-
                     if sig == "UP":
-                        srg_tables[j]["rows"][ri]["cells"][ci].setdefault("sig", []).append(col_letters[i])
+                        row["cells"][j].setdefault("sig", []).append(col_letters[i])
                     elif sig == "DOWN":
-                        srg_tables[i]["rows"][ri]["cells"][ci].setdefault("sig", []).append(col_letters[j])
+                        row["cells"][i].setdefault("sig", []).append(col_letters[j])
 
-    # flatten sig arrays into strings
+    # Flatten sig arrays into strings
     for res in srg_tables:
         for row in res["rows"]:
             for cell in row["cells"]:
                 if "sig" in cell:
-                    cell["sig"] = "".join(cell["sig"])
+                    cell["sig"] = "".join(sorted(set(cell["sig"])))
+
+
 
 
 
 def crosstab_single_response_grid_with_topbreak(
-    df, var_group, group_rows, meta, topbreak_title, meta_df, sig_level=95
+    df, var_group, group_rows, meta, topbreak_title, meta_df, sig_level
 ):
     if not topbreak_title or topbreak_title not in meta_df["Table_Title"].astype(str).values:
         return crosstab_single_response_grid(df, var_group, group_rows, meta)
@@ -701,6 +701,13 @@ def crosstab_single_response_grid_with_topbreak(
         for sv, slabel in value_labels.items():
             tb_df = df[df[tb_var] == sv]
             sub_table = crosstab_single_response_grid(tb_df, var_group, group_rows, meta)
+
+            # ✅ Inject base into each cell if missing
+            matrix_base = sub_table.get("Matrix", {}).get("base", len(tb_df))
+            for row in sub_table.get("Matrix", {}).get("rows", []):
+                for cell in row.get("cells", []):
+                    cell.setdefault("base", matrix_base)
+
             results.append({"topbreak_label": slabel, **sub_table})
 
     elif tb_qtype in ["MR", "SRG"]:
@@ -711,6 +718,13 @@ def crosstab_single_response_grid_with_topbreak(
                 continue
             tb_df = df[df[child_var] == 1]
             sub_table = crosstab_single_response_grid(tb_df, var_group, group_rows, meta)
+
+            # ✅ Inject base into each cell if missing
+            matrix_base = sub_table.get("Matrix", {}).get("base", len(tb_df))
+            for row in sub_table.get("Matrix", {}).get("rows", []):
+                for cell in row.get("cells", []):
+                    cell.setdefault("base", matrix_base)
+
             results.append({"topbreak_label": child_label, **sub_table})
 
     else:
@@ -718,38 +732,45 @@ def crosstab_single_response_grid_with_topbreak(
 
     # prepend Total
     total_table = crosstab_single_response_grid(df, var_group, group_rows, meta)
+
+    # ✅ Inject base into total cells
+    total_base = total_table.get("Matrix", {}).get("base", len(df))
+    for row in total_table.get("Matrix", {}).get("rows", []):
+        for cell in row.get("cells", []):
+            cell.setdefault("base", total_base)
+
     results.insert(0, {"topbreak_label": "Total", **total_table})
 
     # ✅ Build column labels with letters (A, B, C...)
     for r in results:
         matrix_cols = r["Matrix"].get("columns", [])
-
-        # Generate enough letters for the number of columns
         letters = get_topbreak_letters(len(matrix_cols))
 
         new_cols = []
         for j, col in enumerate(matrix_cols):
-            # handle dict or string column labels
-            if isinstance(col, dict):
-                col_label = col.get("label", str(col))
-            else:
-                col_label = str(col)
-            
+            col_label = col.get("label", str(col)) if isinstance(col, dict) else str(col)
             new_cols.append({
                 "label": col_label.strip(),
                 "letter": letters[j]
             })
-
-        # ✅ update the columns in-place
         r["Matrix"]["columns"] = new_cols
 
     # ✅ Run sig test per cell
-    if sig_level and sig_level != "none":
-        apply_sig_test_to_srg(results, sig_level)
+    print(results)
+    # ✅ Run sig test only within each grid/table (not across topbreaks)
+    if sig_level != "none":
+        for res in results:
+            matrix = res.get("Matrix")
+            if not matrix or "rows" not in matrix or "columns" not in matrix:
+                continue
+
+            # Wrap the matrix in a list to reuse the same sig-test logic
+            apply_sig_test_to_srg([res], sig_level)
 
     merged_summaries = build_topbreak_summaries(df, var_group, group_rows, meta, results)
 
     return {"matrix": results, **merged_summaries}
+
 
 
 

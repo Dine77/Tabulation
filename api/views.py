@@ -685,7 +685,7 @@ def new_crosstab(request, project_id):
 
         if topbreak_title:
             table_data = crosstab_single_response_grid_with_topbreak(
-                df, grp, group_rows, value_label_dict, topbreak_title, meta_df
+                df, grp, group_rows, value_label_dict, topbreak_title, meta_df,sig_level=sig_level
             )
         else:
             table_data = crosstab_single_response_grid(df, grp, group_rows, value_label_dict)
@@ -706,7 +706,7 @@ def new_crosstab(request, project_id):
 
         if topbreak_title:
             table_data = crosstab_multi_response_grid_with_topbreak(
-                df, grp, group_rows, value_label_dict, meta_df, topbreak_title
+                df, grp, group_rows, value_label_dict, meta_df, topbreak_title,sig_level=sig_level
             )
         else:
             table_data = crosstab_multi_response_grid(
