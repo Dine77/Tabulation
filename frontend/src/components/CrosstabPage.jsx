@@ -316,7 +316,7 @@ function CrosstabPage() {
     const markerLeft = ((npsObj.score + 100) / 200) * 100;
 
     // Split rows into fixed + sortable
-    const fixedTop = [{ label: "Total", count: npsObj.base }];
+    const fixedTop = [{ label: "Base", count: npsObj.base }];
     const fixedBottom = [
       { label: "Mean", count: npsObj.mean },
       { label: "Std Dev", count: npsObj.stddev }
@@ -386,7 +386,6 @@ function CrosstabPage() {
           <thead className="bg-gray-100">
             <tr>
               <th className="border px-3 py-2 text-left bg-gray-200 min-w-[10vw]">
-                Scale
               </th>
               {cols.map((c, ci) => {
                 const colSort = sortConfigs[tableKey] || {};
@@ -412,7 +411,7 @@ function CrosstabPage() {
             {sortedRows.map((r, ri) => (
               <tr
                 key={ri}
-                className={ri % 2 ? "bg-gray-50 hover:bg-yellow-50" : "bg-white hover:bg-yellow-50"}
+                className={r.label == "Mean" || r.label == "Std Dev" ? "bg-gray-200 hover:bg-yellow-50" : "bg-white hover:bg-yellow-50"}
               >
                 <td className="border px-3 py-2 font-semibold">{r.label}</td>
                 <td className="border px-3 py-2 text-center">
@@ -482,7 +481,7 @@ function CrosstabPage() {
                   <table className="min-w-full border-collapse text-xs">
                     <thead className="bg-gray-100">
                       <tr>
-                        <th className="border px-3 py-2 text-left bg-gray-200">Scale</th>
+                        <th className="border px-3 py-2 text-left bg-gray-100">Scale</th>
                         {catCols.map((c, ci) => (
                           <th key={ci} className="border px-3 py-2 text-center">
                             {c.letter && (
@@ -497,7 +496,7 @@ function CrosstabPage() {
                       {rows.map((r, ri) => (
                         <tr
                           key={ri}
-                          className={ri % 2 ? "bg-gray-50" : "bg-white"}
+                          className={r.label == "Mean" || r.label == "StdDev" || r.label == "Base" || r.label == "Top 2" || r.label == "Bottom 2" || r.label == "Bottom 3" || r.label == "Top 3" || r.label == "Count" ? "bg-gray-200 hover:bg-yellow-50" : "bg-white hover:bg-yellow-50"}
                         >
                           <td className="border px-3 py-2 font-semibold">{r.label}</td>
                           {r.cells?.map((cell, ci) => (
@@ -553,7 +552,7 @@ function CrosstabPage() {
           <table className="min-w-full border-collapse text-xs">
             <thead className="bg-gray-100">
               <tr>
-                <th className="border px-3 py-2 text-left bg-gray-200">Scale</th>
+                <th className="border px-3 py-2 text-left bg-gray-100">Scale</th>
                 {cols.map((c, ci) => (
                   <th key={ci} className="border px-3 py-2 text-center">
                     {c.letter && (
@@ -566,7 +565,7 @@ function CrosstabPage() {
             </thead>
             <tbody>
               {rows.map((r, ri) => (
-                <tr key={ri} className={ri % 2 ? "bg-gray-50" : "bg-white"}>
+                <tr key={ri} className={r.label == "Mean" || r.label == "StdDev" || r.label == "Base" || r.label == "Top 2" || r.label == "Bottom 2" || r.label == "Bottom 3" || r.label == "Top 3" || r.label == "Count" ? "bg-gray-200 hover:bg-yellow-50" : "bg-white hover:bg-yellow-50"}>
                   <td className="border px-3 py-2 font-semibold">{r.label}</td>
                   {r.cells?.map((cell, ci) => (
                     <td key={ci} className="border px-3 py-2 text-center">
@@ -590,7 +589,7 @@ function CrosstabPage() {
             </tbody>
           </table>
         </div>
-      </div>
+      </div >
     );
   };
 
@@ -619,7 +618,7 @@ function CrosstabPage() {
             <table className="min-w-full border-collapse text-xs">
               <thead className="bg-gray-100">
                 <tr>
-                  <th className="border px-3 py-2 text-left bg-gray-200">Scale</th>
+                  <th className="border px-3 py-2 text-left bg-gray-100">Scale</th>
                   {cols.map((c, ci) => (
                     <th key={ci} className="border px-3 py-2 text-center">
                       {c.letter && (
@@ -634,7 +633,7 @@ function CrosstabPage() {
               </thead>
               <tbody>
                 {matrix.rows.map((r, ri) => (
-                  <tr key={ri} className={ri % 2 ? "bg-gray-50" : "bg-white"}>
+                  <tr key={ri} className={r.label == "Mean" || r.label == "StdDev" || r.label == "Base" || r.label == "Top 2" || r.label == "Bottom 2" || r.label == "Bottom 3" || r.label == "Top 3" || r.label == "Count" ? "bg-gray-200 hover:bg-yellow-50" : "bg-white hover:bg-yellow-50"}>
                     <td className="border px-3 py-2 font-semibold">{r.label}</td>
                     {r.cells.map((cell, ci) => (
                       <td key={ci} className="border px-3 py-2 text-center">
@@ -675,13 +674,13 @@ function CrosstabPage() {
             <table className="min-w-full border-collapse text-xs">
               <thead className="bg-gray-100">
                 <tr>
-                  <th className="border px-3 py-2 text-left bg-gray-200"></th>
+                  <th className="border px-3 py-2 text-left bg-gray-100"></th>
                   <th className="border px-3 py-2 text-center">Qualified</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r, ri) => (
-                  <tr key={ri} className={ri % 2 ? "bg-gray-50" : "bg-white"}>
+                  <tr key={ri} className={r.label == "Mean" || r.label == "StdDev" || r.label == "Standard Deviation" || r.label == "Base" || r.label == "Top 2" || r.label == "Bottom 2" || r.label == "Bottom 3" || r.label == "Top 3" || r.label == "Count" ? "bg-gray-200 hover:bg-yellow-50" : "bg-white hover:bg-yellow-50"}>
                     <td className="border px-3 py-2 font-semibold">{r.label}</td>
                     <td className="border px-3 py-2 text-center">
                       <div className="flex flex-col items-center">
@@ -762,7 +761,8 @@ function CrosstabPage() {
                 return (
                   <tr
                     key={idx}
-                    className={`${idx % 2 ? "bg-gray-50" : "bg-white"} hover:bg-yellow-50`}
+                    className="bg-white hover:bg-yellow-50"
+
                   >
                     <td className="border px-3 py-2">{attrLabel}</td>
                     <td className="border px-3 py-2 text-center">
@@ -831,7 +831,7 @@ function CrosstabPage() {
             <tbody>
               {[...rows].sort((a, b) => (a.label === "Average" ? -1 : b.label === "Average" ? 1 : 0))
                 .map((r, ri) => (
-                  <tr key={ri} className={`${ri % 2 ? "bg-gray-50" : "bg-white"} hover:bg-yellow-50`}>
+                  <tr key={ri} className={r.label == "Mean" || r.label == "StdDev" || r.label == "Base" || r.label == "Top 2" || r.label == "Bottom 2" || r.label == "Bottom 3" || r.label == "Top 3" || r.label == "Count" ? "bg-gray-200 hover:bg-yellow-50" : "bg-white hover:bg-yellow-50"}>
                     <td className="border px-3 py-2 font-semibold">{r.label}</td>
                     {r.cells.map((cell, ci) => (
                       <td key={ci} className="border px-3 py-2 text-center">

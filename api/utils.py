@@ -978,32 +978,26 @@ def crosstab_single_response_grid(df, var_group, meta_rows, value_label_dict):
         first_var = meta_rows.iloc[0]["Var_Name"]
         value_labels = value_label_dict.get(var_name, {})
 
-    # Auto-detect type if missing
+    # --- Auto-detect type ---
     if not add_type:
         if all(str(k).isdigit() for k in value_labels.keys()):
             add_type = "rating"
         else:
             add_type = "categorical"
 
-    # --- scale detection ---
+    # --- Scale setup ---
     scale_codes = sorted(value_labels.keys())
     scale_length = len(scale_codes)
     ordered_codes = scale_codes
 
     rows = []
 
-    # --- Bottom rows (if rating)
-    if add_type == "rating":
-        bottom_n = 2 if scale_length <= 5 else 3
-        bottom_codes = scale_codes[:bottom_n]
-        bottom_row = {"label": f"Bottom {bottom_n}", "cells": []}
-        for var_name, _ in attributes:
-            counts = attr_data[var_name]["counts"]
-            base = attr_data[var_name]["base"]
-            count = sum(int(counts.get(c, 0)) for c in bottom_codes)
-            pct = f"{(count/base)*100:.1f}%" if base > 0 else "0%"
-            bottom_row["cells"].append({"count": count, "pct": pct})
-        rows.append(bottom_row)
+    # ✅ Base row first
+    base_row = {"label": "Base", "cells": []}
+    for var_name, _ in attributes:
+        base = attr_data[var_name]["base"]
+        base_row["cells"].append({"count": int(base), "pct": "100.0%"})
+    rows.append(base_row)
 
     # --- Main scale/category rows ---
     for code in ordered_codes:
@@ -1012,12 +1006,14 @@ def crosstab_single_response_grid(df, var_group, meta_rows, value_label_dict):
             counts = attr_data[var_name]["counts"]
             base = attr_data[var_name]["base"]
             count = int(counts.get(code, 0))
-            pct = f"{(count/base)*100:.1f}%" if base > 0 else "0%"
+            pct = f"{(count / base) * 100:.1f}%" if base > 0 else "0%"
             row_cells.append({"count": count, "pct": pct})
         label = format_code_label(code, value_labels)
         rows.append({"label": label, "cells": row_cells})
 
+    # --- For rating type only ---
     if add_type == "rating":
+        # --- Top rows ---
         top_n = 2 if scale_length <= 5 else 3
         top_codes = scale_codes[-top_n:]
         top_row = {"label": f"Top {top_n}", "cells": []}
@@ -1025,9 +1021,21 @@ def crosstab_single_response_grid(df, var_group, meta_rows, value_label_dict):
             counts = attr_data[var_name]["counts"]
             base = attr_data[var_name]["base"]
             count = sum(int(counts.get(c, 0)) for c in top_codes)
-            pct = f"{(count/base)*100:.1f}%" if base > 0 else "0%"
+            pct = f"{(count / base) * 100:.1f}%" if base > 0 else "0%"
             top_row["cells"].append({"count": count, "pct": pct})
         rows.append(top_row)
+
+        # --- Bottom rows ---
+        bottom_n = 2 if scale_length <= 5 else 3
+        bottom_codes = scale_codes[:bottom_n]
+        bottom_row = {"label": f"Bottom {bottom_n}", "cells": []}
+        for var_name, _ in attributes:
+            counts = attr_data[var_name]["counts"]
+            base = attr_data[var_name]["base"]
+            count = sum(int(counts.get(c, 0)) for c in bottom_codes)
+            pct = f"{(count / base) * 100:.1f}%" if base > 0 else "0%"
+            bottom_row["cells"].append({"count": count, "pct": pct})
+        rows.append(bottom_row)
 
         # --- Mean, StdDev ---
         mean_row, std_row = {"label": "Mean", "cells": []}, {"label": "StdDev", "cells": []}
@@ -1041,22 +1049,10 @@ def crosstab_single_response_grid(df, var_group, meta_rows, value_label_dict):
                 std_row["cells"].append({"count": 0})
         rows.extend([mean_row, std_row])
 
-    # ✅ Merge "Others"
+    # ✅ Merge "Others" after all rows built
     rows = merge_others(rows, total_base, is_cells=True)
 
-    # ✅ Add Total row AFTER merge_others, so it’s never dropped
-    total_row = {"label": "Base", "cells": []}
-    for var_name, _ in attributes:
-        base = attr_data[var_name]["base"]
-        total_row["cells"].append({
-            "count": int(base),
-            "pct": "100.0%"
-        })
-
-    # ✅ Place Total at TOP
-    rows.insert(0, total_row)
-
-    # --- Final matrix result
+    # --- Final matrix result ---
     result = {
         "Matrix": {
             "base": total_base,
@@ -1066,9 +1062,9 @@ def crosstab_single_response_grid(df, var_group, meta_rows, value_label_dict):
         }
     }
 
-    # --- Add summaries (already correct) ---
+    # --- Add summaries ---
     if add_type == "rating":
-        middle_code = scale_codes[len(scale_codes)//2] if len(scale_codes) % 2 == 1 else None
+        middle_code = scale_codes[len(scale_codes) // 2] if len(scale_codes) % 2 == 1 else None
 
         def build_summary(label, codes):
             row = {"label": label, "cells": []}
@@ -1085,16 +1081,14 @@ def crosstab_single_response_grid(df, var_group, meta_rows, value_label_dict):
             total_row = {"label": "Total", "cells": []}
             for var_name, _ in attributes:
                 base = attr_data[var_name]["base"]
-                total_row["cells"].append({
-                    "count": int(base),
-                    "pct": "100%"
-                })
+                total_row["cells"].append({"count": int(base), "pct": "100%"})
             return {
                 "base": total_base,
                 "columns": [label for _, label in attributes],
                 "rows": [total_row, summary_row]
             }
 
+        # Individual summaries
         result["Top Summary"] = build_summary_table("Top Summary", [scale_codes[-1]])
         result["Top2 Summary"] = build_summary_table("Top2 Summary", scale_codes[-2:])
         result["Bottom Summary"] = build_summary_table("Bottom Summary", [scale_codes[0]])
@@ -1103,6 +1097,7 @@ def crosstab_single_response_grid(df, var_group, meta_rows, value_label_dict):
         if middle_code is not None:
             result["Middle Summary"] = build_summary_table("Middle Summary", [middle_code])
 
+        # Mean Summary
         mean_row = {"label": "Mean", "cells": []}
         for var_name, _ in attributes:
             series = attr_data[var_name]["series"]
@@ -1114,7 +1109,8 @@ def crosstab_single_response_grid(df, var_group, meta_rows, value_label_dict):
         }
 
         summary_keys = [
-            "Top Summary", "Top2 Summary", "Bottom Summary", "Bottom2 Summary",
+            "Top Summary", "Top2 Summary",
+            "Bottom Summary", "Bottom2 Summary",
             "Middle Summary", "Mean Summary"
         ]
         for key in summary_keys:
@@ -1122,6 +1118,7 @@ def crosstab_single_response_grid(df, var_group, meta_rows, value_label_dict):
                 result[key] = add_average_or_total_row(result[key], key)
 
     return result
+
 
 
 
