@@ -163,7 +163,7 @@ def crosstab_nps(df, var_name):
     return results
 
 
-def crosstab_single_choice(df, var_name, value_labels, topbreaks=None):
+def crosstab_single_choice(df, var_name, value_labels, add_type=None, topbreaks=None):
     results = {}
 
     total_base = df[var_name].notna().sum()
@@ -172,22 +172,67 @@ def crosstab_single_choice(df, var_name, value_labels, topbreaks=None):
 
     rows = []
 
-    # ✅ Total Row FIRST
+    # ✅ Base Row FIRST
     rows.append({
         "label": "Base",
         "pct": "100%",
         "count": int(total_base)
     })
 
-    # ✅ Then each category
+    # ✅ Each response option
     for code, label in value_labels.items():
         if code in freq:
             code_str = str(int(code)) if isinstance(code, (int, float)) and code == int(code) else str(code)
             rows.append({
                 "label": f"[{code_str}] {label}",
-                "pct": f"{float(freq_pct[code]):.0f}%",
+                "pct": f"{float(freq_pct[code]):.1f}%",
                 "count": int(freq[code])
             })
+
+    # ✅ Only for RATING type — calculate Top/Bottom, Mean, StdDev
+    if str(add_type).strip().lower() == "rating":
+        scale_codes = sorted(value_labels.keys())
+        scale_length = len(scale_codes)
+
+        # --- Define which summaries to show dynamically ---
+        if scale_length <= 5:
+            top_list = [2]
+            bottom_list = [2]
+        else:
+            top_list = [2, 3]
+            bottom_list = [2, 3]
+
+        # --- Top summaries ---
+        for n in top_list:
+            if n <= scale_length:
+                top_codes = scale_codes[-n:]
+                top_count = sum(freq.get(c, 0) for c in top_codes)
+                top_pct = (top_count / total_base * 100) if total_base > 0 else 0
+                rows.append({
+                    "label": f"Top {n}",
+                    "pct": f"{top_pct:.1f}%",
+                    "count": int(top_count)
+                })
+
+        # --- Bottom summaries ---
+        for n in bottom_list:
+            if n <= scale_length:
+                bottom_codes = scale_codes[:n]
+                bottom_count = sum(freq.get(c, 0) for c in bottom_codes)
+                bottom_pct = (bottom_count / total_base * 100) if total_base > 0 else 0
+                rows.append({
+                    "label": f"Bottom {n}",
+                    "pct": f"{bottom_pct:.1f}%",
+                    "count": int(bottom_count)
+                })
+
+        # --- Mean & StdDev ---
+        series = df[var_name].dropna().astype(float)
+        mean_val = round(series.mean(), 2) if not series.empty else 0
+        std_val = round(series.std(), 2) if not series.empty else 0
+
+        rows.append({"label": "Mean", "count": mean_val})
+        rows.append({"label": "StdDev", "count": std_val})
 
     results["Total"] = {"base": int(total_base), "rows": rows}
     return results

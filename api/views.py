@@ -448,7 +448,7 @@ def quick_crosstab(request, project_id):
                 qtype = "NPS"
             else:
                 value_labels = value_label_dict.get(var_name, {})
-                table_data = crosstab_single_choice(df, var_name, value_labels)
+                table_data = crosstab_single_choice(df, var_name, value_labels,add_type)
                 qtype = "SC"
 
             output.append({
