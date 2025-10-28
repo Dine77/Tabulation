@@ -441,24 +441,32 @@ def add_average_or_total_row(summary, key_name):
 def crosstab_single_choice_with_topbreak(
     df, var_name, value_labels, topbreak_title, meta, meta_df, sig_level=95
 ):
+    import numpy as np
+    import pandas as pd
+
+    # --- Detect add_type safely ---
+    add_type_arr = meta_df.loc[meta_df["Var_Name"] == var_name, "Add_Question_Type"].values
+    add_type = str(add_type_arr[0]).strip().upper() if len(add_type_arr) > 0 and pd.notna(add_type_arr[0]) else ""
+
+    # --- Build topbreak columns ---
     cols, columns = build_topbreak(df, meta_df, topbreak_title, meta)
     rows = []
 
-    # Column letters (A, B, C…)
+    # --- Column letters (A, B, C, …) ---
     col_letters = [c.get("letter") if isinstance(c, dict) else chr(65+i) for i, c in enumerate(columns)]
 
-    thresholds = {80: 1.28, 90: 1.64, 95: 1.96, 99: 2.58, "None": None}
+    # --- Significance test threshold ---
+    thresholds = {80: 1.28, 90: 1.64, 95: 1.96, 99: 2.58, "NONE": None}
     z_threshold = thresholds.get(sig_level, None)
 
-    # ✅ --- Add Base Row ---
+    # ✅ Base Row
     base_row = {"label": "Base", "cells": []}
     for col_name, sub_df in cols:
         base = sub_df[var_name].notna().sum()
         base_row["cells"].append({"count": int(base), "pct": "100%"})
-
-    # ✅ Add the Base row at the end (or use insert(0, base_row) to show on top)
     rows.append(base_row)
-    # --- Loop over value labels
+
+    # --- Value Label Rows (Main Choices) ---
     for raw_code, label in value_labels.items():
         try:
             code_num = float(raw_code)
@@ -477,9 +485,9 @@ def crosstab_single_choice_with_topbreak(
             col_stats.append((count, base))
             row_data["cells"].append({"count": int(count), "pct": pct})
 
-        # --- Sig Test ---
+        # --- Significance Test for category rows ---
         if z_threshold is not None:
-            for i in range(1, len(row_data["cells"])):  
+            for i in range(1, len(row_data["cells"])):
                 for j in range(i + 1, len(row_data["cells"])):
                     p_count, p_base = col_stats[i]
                     c_count, c_base = col_stats[j]
@@ -490,17 +498,86 @@ def crosstab_single_choice_with_topbreak(
                     elif sig == "DOWN":
                         row_data["cells"][i].setdefault("sig", []).append(col_letters[j])
 
+        # Convert sig list → string
         for c in row_data["cells"]:
             if "sig" in c:
                 c["sig"] = " ".join(c["sig"])
 
         rows.append(row_data)
 
+    # ✅ Rating Type Enhancements (Top/Bottom + Mean + StdDev)
+    if str(add_type).strip().lower() == "rating":
 
+        scale_codes = sorted(value_labels.keys())
+        scale_length = len(scale_codes)
+
+        # Choose how many top/bottom to show
+        if scale_length <= 5:
+            top_list = [2]
+            bottom_list = [2]
+        else:
+            top_list = [2, 3]
+            bottom_list = [2, 3]
+
+        # --- TOP Rows ---
+        for n in top_list:
+            top_row = {"label": f"Top {n}", "cells": []}
+            top_codes = scale_codes[-n:]
+            for col_name, sub_df in cols:
+                base = sub_df[var_name].notna().sum()
+                count = sub_df[var_name].isin(top_codes).sum()
+                pct = f"{(count / base * 100):.1f}%" if base > 0 else "0%"
+                top_row["cells"].append({"count": int(count), "pct": pct})
+            rows.append(top_row)
+
+        # --- BOTTOM Rows ---
+        for n in bottom_list:
+            bottom_row = {"label": f"Bottom {n}", "cells": []}
+            bottom_codes = scale_codes[:n]
+            for col_name, sub_df in cols:
+                base = sub_df[var_name].notna().sum()
+                count = sub_df[var_name].isin(bottom_codes).sum()
+                pct = f"{(count / base * 100):.1f}%" if base > 0 else "0%"
+                bottom_row["cells"].append({"count": int(count), "pct": pct})
+            rows.append(bottom_row)
+
+        # --- Mean and StdDev ---
+        mean_row = {"label": "Mean", "cells": []}
+        std_row = {"label": "StdDev", "cells": []}
+        for col_name, sub_df in cols:
+            valid_series = sub_df[var_name].dropna().astype(float)
+            mean_val = round(valid_series.mean(), 2) if len(valid_series) > 0 else 0
+            std_val = round(valid_series.std(), 2) if len(valid_series) > 0 else 0
+            mean_row["cells"].append({"count": mean_val})
+            std_row["cells"].append({"count": std_val})
+        rows.extend([mean_row, std_row])
+
+        # --- ✅ Optional Sig Test for Top/Bottom Rows ---
+        if z_threshold is not None:
+            rating_rows = [r for r in rows if r["label"].startswith(("Top", "Bottom"))]
+            for row_data in rating_rows:
+                col_stats = []
+                for cell_idx, (col_name, sub_df) in enumerate(cols):
+                    base = sub_df[var_name].notna().sum()
+                    count = row_data["cells"][cell_idx]["count"]
+                    col_stats.append((count, base))
+
+                for i in range(1, len(col_stats)):
+                    for j in range(i + 1, len(col_stats)):
+                        p_count, p_base = col_stats[i]
+                        c_count, c_base = col_stats[j]
+                        sig = run_sig_test(p_count, p_base, c_count, c_base, z_threshold)
+
+                        if sig == "UP":
+                            row_data["cells"][j].setdefault("sig", []).append(col_letters[i])
+                        elif sig == "DOWN":
+                            row_data["cells"][i].setdefault("sig", []).append(col_letters[j])
+
+                for c in row_data["cells"]:
+                    if "sig" in c:
+                        c["sig"] = " ".join(c["sig"])
 
     return {"columns": columns, "rows": rows}
-
-
 
 
 # ---------- Multi Response ----------
@@ -1223,7 +1300,6 @@ def crosstab_multi_response_grid(df, var_group, group_rows, value_label_dict):
 
     # --- Step 1: detect type using meta ---
     mr_type = detect_mr_type(vars_in_group, value_label_dict)
-    print("Detected MRG Type:", mr_type)
 
     # --- Step 2: figure out columns (categories) ---
     # Each "row group" like E12_R1, E12_R2... corresponds to a column

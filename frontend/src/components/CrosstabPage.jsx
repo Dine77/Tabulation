@@ -84,6 +84,25 @@ function CrosstabPage() {
 
   const API_BASE = import.meta.env.VITE_API_URL;
 
+
+  const baseLabels = ["Base"];
+  const summaryLabels = ["Top 2", "Top 3", "Bottom 2", "Bottom 3"];
+  const statLabels = ["Mean", "StdDev", "Standard Deviation", "Count"];
+
+  const getRowClass = (label) => {
+    if (baseLabels.includes(label)) {
+      return "bg-gray-300 font-semibold text-gray-900 hover:bg-yellow-50";
+    }
+    if (summaryLabels.includes(label)) {
+      return "bg-gray-100 text-gray-600 hover:bg-yellow-50";
+    }
+    if (statLabels.includes(label)) {
+      return "bg-gray-200 text-gray-800 hover:bg-yellow-50";
+    }
+    return "bg-white hover:bg-yellow-50";
+  };
+
+
   // Scroll Handlers
   useEffect(() => {
     const handleScroll = () => {
@@ -496,7 +515,7 @@ function CrosstabPage() {
                       {rows.map((r, ri) => (
                         <tr
                           key={ri}
-                          className={r.label == "Mean" || r.label == "StdDev" || r.label == "Base" || r.label == "Top 2" || r.label == "Bottom 2" || r.label == "Bottom 3" || r.label == "Top 3" || r.label == "Count" ? "bg-gray-200 hover:bg-yellow-50" : "bg-white hover:bg-yellow-50"}
+                          className={getRowClass(r.label)}
                         >
                           <td className="border px-3 py-2 font-semibold">{r.label}</td>
                           {r.cells?.map((cell, ci) => (
@@ -565,7 +584,7 @@ function CrosstabPage() {
             </thead>
             <tbody>
               {rows.map((r, ri) => (
-                <tr key={ri} className={r.label == "Mean" || r.label == "StdDev" || r.label == "Base" || r.label == "Top 2" || r.label == "Bottom 2" || r.label == "Bottom 3" || r.label == "Top 3" || r.label == "Count" ? "bg-gray-200 hover:bg-yellow-50" : "bg-white hover:bg-yellow-50"}>
+                <tr key={ri} className={getRowClass(r.label)}>
                   <td className="border px-3 py-2 font-semibold">{r.label}</td>
                   {r.cells?.map((cell, ci) => (
                     <td key={ci} className="border px-3 py-2 text-center">
@@ -633,7 +652,7 @@ function CrosstabPage() {
               </thead>
               <tbody>
                 {matrix.rows.map((r, ri) => (
-                  <tr key={ri} className={r.label == "Mean" || r.label == "StdDev" || r.label == "Base" || r.label == "Top 2" || r.label == "Bottom 2" || r.label == "Bottom 3" || r.label == "Top 3" || r.label == "Count" ? "bg-gray-200 hover:bg-yellow-50" : "bg-white hover:bg-yellow-50"}>
+                  <tr key={ri} className={getRowClass(r.label)}>
                     <td className="border px-3 py-2 font-semibold">{r.label}</td>
                     {r.cells.map((cell, ci) => (
                       <td key={ci} className="border px-3 py-2 text-center">
@@ -680,7 +699,7 @@ function CrosstabPage() {
               </thead>
               <tbody>
                 {rows.map((r, ri) => (
-                  <tr key={ri} className={r.label == "Mean" || r.label == "StdDev" || r.label == "Standard Deviation" || r.label == "Base" || r.label == "Top 2" || r.label == "Bottom 2" || r.label == "Bottom 3" || r.label == "Top 3" || r.label == "Count" ? "bg-gray-200 hover:bg-yellow-50" : "bg-white hover:bg-yellow-50"}>
+                  <tr key={ri} className={getRowClass(r.label)}>
                     <td className="border px-3 py-2 font-semibold">{r.label}</td>
                     <td className="border px-3 py-2 text-center">
                       <div className="flex flex-col items-center">
@@ -831,7 +850,7 @@ function CrosstabPage() {
             <tbody>
               {[...rows].sort((a, b) => (a.label === "Average" ? -1 : b.label === "Average" ? 1 : 0))
                 .map((r, ri) => (
-                  <tr key={ri} className={r.label == "Mean" || r.label == "StdDev" || r.label == "Base" || r.label == "Top 2" || r.label == "Bottom 2" || r.label == "Bottom 3" || r.label == "Top 3" || r.label == "Count" ? "bg-gray-200 hover:bg-yellow-50" : "bg-white hover:bg-yellow-50"}>
+                  <tr key={ri} className={getRowClass(r.label)}>
                     <td className="border px-3 py-2 font-semibold">{r.label}</td>
                     {r.cells.map((cell, ci) => (
                       <td key={ci} className="border px-3 py-2 text-center">
