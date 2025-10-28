@@ -170,27 +170,28 @@ def crosstab_single_choice(df, var_name, value_labels, topbreaks=None):
     freq = df[var_name].value_counts(dropna=True)
     freq_pct = df[var_name].value_counts(normalize=True, dropna=True) * 100
 
-    merged = {}
+    rows = []
 
+    # ✅ Total Row FIRST
+    rows.append({
+        "label": "Base",
+        "pct": "100%",
+        "count": int(total_base)
+    })
+
+    # ✅ Then each category
     for code, label in value_labels.items():
         if code in freq:
             code_str = str(int(code)) if isinstance(code, (int, float)) and code == int(code) else str(code)
-            group_key = label.strip().lower()
-            if group_key not in merged:
-                merged[group_key] = {
-                    "label": f"[{code_str}] {label}",
-                    "count": 0,
-                    "pct": 0.0,
-                }
-            merged[group_key]["count"] += int(freq[code])
-            merged[group_key]["pct"] = f"{float(freq_pct[code])}%"
-
-
-    rows = list(merged.values())
-    rows = merge_others(rows, total_base)   # ✅ merge here
+            rows.append({
+                "label": f"[{code_str}] {label}",
+                "pct": f"{float(freq_pct[code]):.0f}%",
+                "count": int(freq[code])
+            })
 
     results["Total"] = {"base": int(total_base), "rows": rows}
     return results
+
 
 def get_topbreak_letters(n: int):
     """Return A, B, C … AA, AB if needed"""
@@ -269,7 +270,26 @@ def build_topbreak(df, meta_df, topbreak_title, meta):
     return cols, [{"label": "Total", "letter": "A"}]
 
 
-def build_topbreak_summaries(df, var_group, group_rows, meta, children_results):
+def build_topbreak_summaries(df, var_group, group_rows, meta, children_results, sig_level=95):
+    import math
+
+    # --- pooled variance z-test ---
+    def run_sig_test(p_count, p_base, c_count, c_base, z_threshold, n_comparisons=1):
+        try:
+            p = p_count / p_base
+            c = c_count / c_base
+            p_combined = (p_count + c_count) / (p_base + c_base)
+            se = math.sqrt(p_combined * (1 - p_combined) * ((1 / p_base) + (1 / c_base)))
+            z_score = abs((p - c) / se) if se > 0 else 0
+            return z_score > z_threshold
+        except Exception:
+            return False
+
+    # Z threshold for chosen significance level
+    z_thresholds = {90: 1.645, 95: 1.96, 99: 2.576}
+    z_threshold = z_thresholds.get(sig_level, 1.96)
+
+    # Base table from your existing grid
     base_table = crosstab_single_response_grid(df, var_group, group_rows, meta)
 
     merged = {}
@@ -283,36 +303,46 @@ def build_topbreak_summaries(df, var_group, group_rows, meta, children_results):
         if not base_table.get(key):
             continue
 
-        # Columns = Total + each topbreak
         combined = {
             "base": base_table[key]["base"],
             "columns": ["Total"] + [c["topbreak_label"].strip() for c in children_results],
             "rows": []
         }
 
-        # Each row = Row1, Row2, Row3 … not just one row
-        row_labels = base_table[key]["columns"]  # <- "Row 1", "Row 2", ...
+        row_labels = base_table[key]["columns"]
+
         for ridx, row_label in enumerate(row_labels):
             new_row = {"label": row_label, "cells": []}
 
-            # total cell
+            # --- total cell ---
             total_cell = base_table[key]["rows"][0]["cells"][ridx]
+            total_count = total_cell.get("count", 0)
+            total_base = base_table[key]["base"]
             new_row["cells"].append(total_cell)
 
-            # each topbreak
+            # --- topbreaks ---
             for child in children_results:
                 child_summary = child.get(key)
                 if child_summary:
-                    child_cell = child_summary["rows"][0]["cells"][ridx]
-                    new_row["cells"].append(child_cell)
+                    cell = child_summary["rows"][0]["cells"][ridx]
+                    count = cell.get("count", 0)
+                    base = child_summary["base"]
+
+                    # --- significance test vs total ---
+                    sig = run_sig_test(count, base, total_count, total_base, z_threshold)
+
+                    # Append sig flag
+                    cell["sig"] = sig
+                    new_row["cells"].append(cell)
                 else:
-                    new_row["cells"].append({"count": 0, "pct": "0%"})
+                    new_row["cells"].append({"count": 0, "pct": "0%", "sig": False})
 
             combined["rows"].append(new_row)
 
         merged[key] = combined
 
     return merged
+
 
 # ---------- Add Average Row to Summary ----------
 def add_average_or_total_row(summary, key_name):
@@ -372,11 +402,19 @@ def crosstab_single_choice_with_topbreak(
     # Column letters (A, B, C…)
     col_letters = [c.get("letter") if isinstance(c, dict) else chr(65+i) for i, c in enumerate(columns)]
 
-    thresholds = {80: 1.28, 90: 1.64, 95: 1.96, 99: 2.58,"None": None,}
-    z_threshold = thresholds.get(sig_level,None)
+    thresholds = {80: 1.28, 90: 1.64, 95: 1.96, 99: 2.58, "None": None}
+    z_threshold = thresholds.get(sig_level, None)
 
+    # ✅ --- Add Base Row ---
+    base_row = {"label": "Base", "cells": []}
+    for col_name, sub_df in cols:
+        base = sub_df[var_name].notna().sum()
+        base_row["cells"].append({"count": int(base), "pct": "100%"})
+
+    # ✅ Add the Base row at the end (or use insert(0, base_row) to show on top)
+    rows.append(base_row)
+    # --- Loop over value labels
     for raw_code, label in value_labels.items():
-        # ✅ Normalize code for display
         try:
             code_num = float(raw_code)
             code_display = str(int(code_num)) if code_num.is_integer() else str(code_num)
@@ -389,16 +427,13 @@ def crosstab_single_choice_with_topbreak(
 
         for col_name, sub_df in cols:
             base = sub_df[var_name].notna().sum()
-
-            # ✅ Match values as float → int safe comparison
             count = (sub_df[var_name] == code_num).sum()
-
-            pct = f"{(count / base * 100) if base > 0 else 0}%" if base > 0 else "0%"
+            pct = f"{(count / base * 100):.1f}%" if base > 0 else "0%"
             col_stats.append((count, base))
             row_data["cells"].append({"count": int(count), "pct": pct})
 
+        # --- Sig Test ---
         if z_threshold is not None:
-        # 🔹 Run sig test pairwise (skip Total = A at index 0)
             for i in range(1, len(row_data["cells"])):  
                 for j in range(i + 1, len(row_data["cells"])):
                     p_count, p_base = col_stats[i]
@@ -410,14 +445,16 @@ def crosstab_single_choice_with_topbreak(
                     elif sig == "DOWN":
                         row_data["cells"][i].setdefault("sig", []).append(col_letters[j])
 
-        # Convert sig list → string "B C"
         for c in row_data["cells"]:
             if "sig" in c:
                 c["sig"] = " ".join(c["sig"])
 
         rows.append(row_data)
 
+
+
     return {"columns": columns, "rows": rows}
+
 
 
 
@@ -428,7 +465,7 @@ def crosstab_multi_response_with_topbreak(
     cols, columns = build_topbreak(df, meta_df, topbreak_title, value_label_dict)
     rows = []
 
-    # Letters for columns (A = Total, but skip for sig tests)
+    # Letters for columns (A = Total, B = subgroup, etc.)
     col_letters = [c.get("letter") if isinstance(c, dict) else chr(65+i) for i, c in enumerate(columns)]
 
     thresholds = {80: 1.28, 90: 1.64, 95: 1.96, 99: 2.58, "None": None}
@@ -437,12 +474,19 @@ def crosstab_multi_response_with_topbreak(
     vars_in_group = group_rows["Var_Name"].tolist()
     group_df = df[vars_in_group]
 
-    # --- Detect type (binary vs nonbinary) ---
+    # --- Detect type (binary vs nonbinary)
     unique_vals = pd.unique(group_df.fillna(0).values.ravel())
     unique_vals = [int(v) for v in unique_vals if v != 0]
     mr_type = "binary" if not unique_vals or max(unique_vals) == 1 else "nonbinary"
 
-    # --- Binary MR (0/1) ---
+    # ✅ --- First: Build Base Row (always on top)
+    base_row = {"label": "Base", "cells": []}
+    for col_name, sub_df in cols:
+        base = int(sub_df[vars_in_group].notna().any(axis=1).sum())
+        base_row["cells"].append({"count": base, "pct": "100%"})
+    rows.append(base_row)
+
+    # --- Binary MR (0/1)
     if mr_type == "binary":
         for _, row in group_rows.iterrows():
             var = row["Var_Name"]
@@ -458,10 +502,10 @@ def crosstab_multi_response_with_topbreak(
                 col_stats.append((count, base))
                 row_data["cells"].append({"count": count, "pct": pct})
 
-            # sig tests
+            # --- Sig tests
             if z_threshold is not None:
                 for i in range(1, len(row_data["cells"])):
-                    for j in range(i+1, len(row_data["cells"])):
+                    for j in range(i + 1, len(row_data["cells"])):
                         p_count, p_base = col_stats[i]
                         c_count, c_base = col_stats[j]
                         sig = run_sig_test(p_count, p_base, c_count, c_base, z_threshold)
@@ -476,9 +520,8 @@ def crosstab_multi_response_with_topbreak(
 
             rows.append(row_data)
 
-    # --- Non-binary MR (floating/fixed) ---
+    # --- Non-binary MR (multi-coded)
     else:
-        # merge all labels across vars
         label_map = {}
         for var in vars_in_group:
             label_map.update(value_label_dict.get(var, {}))
@@ -494,15 +537,15 @@ def crosstab_multi_response_with_topbreak(
 
             for col_name, sub_df in cols:
                 base = sub_df[vars_in_group].notna().any(axis=1).sum()
-                count = int((sub_df[vars_in_group] == code).sum().sum())  # count occurrences of code
+                count = int((sub_df[vars_in_group] == code).sum().sum())
                 pct = f"{(count / base * 100):.1f}%" if base > 0 else "0%"
                 col_stats.append((count, base))
                 row_data["cells"].append({"count": count, "pct": pct})
 
-            # sig tests
+            # --- Sig tests
             if z_threshold is not None:
                 for i in range(1, len(row_data["cells"])):
-                    for j in range(i+1, len(row_data["cells"])):
+                    for j in range(i + 1, len(row_data["cells"])):
                         p_count, p_base = col_stats[i]
                         c_count, c_base = col_stats[j]
                         sig = run_sig_test(p_count, p_base, c_count, c_base, z_threshold)
@@ -517,7 +560,9 @@ def crosstab_multi_response_with_topbreak(
 
             rows.append(row_data)
 
+    # ✅ Return result with Base row on top
     return {"columns": columns, "rows": rows}
+
 
 
 
@@ -754,9 +799,7 @@ def crosstab_single_response_grid_with_topbreak(
                 "letter": letters[j]
             })
         r["Matrix"]["columns"] = new_cols
-
-    # ✅ Run sig test per cell
-    print(results)
+        
     # ✅ Run sig test only within each grid/table (not across topbreaks)
     if sig_level != "none":
         for res in results:
@@ -770,67 +813,6 @@ def crosstab_single_response_grid_with_topbreak(
     merged_summaries = build_topbreak_summaries(df, var_group, group_rows, meta, results)
 
     return {"matrix": results, **merged_summaries}
-
-
-
-
-# def crosstab_single_choice(df, var_name, value_labels, topbreaks=None, add_type=""):
-    results = {}
-
-    total_base = df[var_name].notna().sum()
-    freq = df[var_name].value_counts(dropna=True)
-    freq_pct = df[var_name].value_counts(normalize=True, dropna=True) * 100
-
-    rows = []
-
-    if str(add_type).lower() == "nps":
-        # --- Distribution 0–10 ---
-        ordered_codes = sorted(freq.index.tolist())  # ensure only observed values 0..10
-        for code in ordered_codes:
-            code_str = str(int(code)) if isinstance(code, (int, float)) and code == int(code) else str(code)
-            count = int(freq.get(code, 0))
-            pct = round(freq_pct.get(code, 0.0), 1)
-            label = f"[{code_str}]"  # no label, just the number
-            rows.append({"label": label, "count": count, "pct": f"{pct}%"})
-
-        # --- Promoters, Detractors ---
-        promoters = sum(int(freq.get(c, 0)) for c in [9, 10])
-        detractors = sum(int(freq.get(c, 0)) for c in range(0, 7))
-
-        promoters_pct = (promoters / total_base * 100) if total_base > 0 else 0
-        detractors_pct = (detractors / total_base * 100) if total_base > 0 else 0
-        nps_score = round(promoters_pct - detractors_pct, 1)
-
-        # --- Add NPS row ---
-        rows.append({
-            "label": "NPS Score",
-            "count": nps_score,
-            "pct": ""
-        })
-
-    else:
-        # 🔹 Normal SC behaviour
-        merged = {}
-        for code, label in value_labels.items():
-            if code in freq:
-                code_str = str(int(code)) if isinstance(code, (int, float)) and code == int(code) else str(code)
-                group_key = str(label).strip().lower()
-
-                if group_key not in merged:
-                    merged[group_key] = {
-                        "label": f"[{code_str}] {label}",
-                        "count": 0,
-                        "pct": 0.0,
-                    }
-
-                merged[group_key]["count"] += int(freq[code])
-                merged[group_key]["pct"] += round(float(freq_pct[code]), 1)
-
-        rows = list(merged.values())
-
-    results["Total"] = {"base": int(total_base), "rows": rows}
-    return results
-
 
 def safe_number(x):
     if x is None or (isinstance(x, float) and math.isnan(x)):
@@ -850,11 +832,18 @@ def crosstab_multi_response(df, var_group, meta_rows, value_label_dict):
     unique_vals = [int(v) for v in unique_vals if v != 0]
 
     if not unique_vals:
-        mr_type = "binary"   # fallback
+        mr_type = "binary"
     else:
         mr_type = "binary" if max(unique_vals) == 1 else "nonbinary"
 
     rows = []
+
+    # --- Total Row First (like screenshot) ---
+    rows.append({
+        "label": "Base",
+        "pct": "100%",
+        "count": int(base)
+    })
 
     # --- Binary handling ---
     if mr_type == "binary":
@@ -863,30 +852,37 @@ def crosstab_multi_response(df, var_group, meta_rows, value_label_dict):
                 continue
             count_val = int((df[var_name] == 1).sum())
 
-            # ✅ take label for code=1 from value_label_dict[var_name]
+            # ✅ Take label for code=1 from value_label_dict[var_name]
             label_map = value_label_dict.get(var_name, {})
             label = label_map.get(1, var_name)
 
-            pct = f"{(count_val/base)*100:.1f}%" if base > 0 else "0%"
-            rows.append({"label": str(label), "count": int(count_val), "pct": pct})
+            pct = f"{(count_val / base) * 100:.0f}%" if base > 0 else "0%"
+            rows.append({
+                "label": str(label),
+                "count": count_val,
+                "pct": pct
+            })
 
     # --- Non-binary handling ---
     else:
         all_values = group_df.values.ravel()
         all_values = pd.Series(all_values).dropna().astype(int)
-        all_values = all_values[all_values != 0]   # ✅ drop zeros
+        all_values = all_values[all_values != 0]
 
         counts = all_values.value_counts().to_dict()
 
-        # ✅ merge value labels across all variables in this group
         label_map = {}
         for var in vars_in_group:
             label_map.update(value_label_dict.get(var, {}))
 
         for code, count_val in counts.items():
             label = label_map.get(code, str(code))
-            pct = f"{(count_val/base)*100:.1f}%" if base > 0 else "0%"
-            rows.append({"label": str(label), "count": int(count_val), "pct": pct})
+            pct = f"{(count_val / base) * 100:.0f}%" if base > 0 else "0%"
+            rows.append({
+                "label": str(label),
+                "count": count_val,
+                "pct": pct
+            })
 
     # --- Preserve metadata order ---
     ordered_rows, seen = [], set()
@@ -897,14 +893,18 @@ def crosstab_multi_response(df, var_group, meta_rows, value_label_dict):
                 ordered_rows.append(row)
                 seen.add(label)
 
-    if not ordered_rows:
-        ordered_rows = rows
+    # If we already added Total at top, just combine it properly
+    if ordered_rows:
+        final_rows = [rows[0]] + ordered_rows  # ensure Total stays on top
+    else:
+        final_rows = rows
 
     # --- Merge others if needed ---
-    ordered_rows = merge_others(ordered_rows, base)
+    final_rows = merge_others(final_rows, base)
 
-    results["Total"] = {"base": base, "rows": ordered_rows}
+    results["Total"] = {"base": base, "rows": final_rows}
     return results
+
 
 def crosstab_numeric(df, var_name):
     series = df[var_name].dropna()
@@ -978,7 +978,6 @@ def crosstab_single_response_grid(df, var_group, meta_rows, value_label_dict):
         first_var = meta_rows.iloc[0]["Var_Name"]
         value_labels = value_label_dict.get(var_name, {})
 
-
     # Auto-detect type if missing
     if not add_type:
         if all(str(k).isdigit() for k in value_labels.keys()):
@@ -993,13 +992,7 @@ def crosstab_single_response_grid(df, var_group, meta_rows, value_label_dict):
 
     rows = []
 
-    # --- Total row ---
-    total_row = {"label": "Total", "cells": []}
-    for var_name, _ in attributes:
-        base = attr_data[var_name]["base"]
-        total_row["cells"].append({"count": base, "pct": "100%"})
-    rows.append(total_row)
-
+    # --- Bottom rows (if rating)
     if add_type == "rating":
         bottom_n = 2 if scale_length <= 5 else 3
         bottom_codes = scale_codes[:bottom_n]
@@ -1008,18 +1001,18 @@ def crosstab_single_response_grid(df, var_group, meta_rows, value_label_dict):
             counts = attr_data[var_name]["counts"]
             base = attr_data[var_name]["base"]
             count = sum(int(counts.get(c, 0)) for c in bottom_codes)
-            pct = f"{(count/base)*100}%" if base > 0 else "0%"
+            pct = f"{(count/base)*100:.1f}%" if base > 0 else "0%"
             bottom_row["cells"].append({"count": count, "pct": pct})
         rows.append(bottom_row)
 
-    # --- Scale rows ---
+    # --- Main scale/category rows ---
     for code in ordered_codes:
         row_cells = []
         for var_name, _ in attributes:
             counts = attr_data[var_name]["counts"]
             base = attr_data[var_name]["base"]
             count = int(counts.get(code, 0))
-            pct = f"{(count/base)*100}%" if base > 0 else "0%"
+            pct = f"{(count/base)*100:.1f}%" if base > 0 else "0%"
             row_cells.append({"count": count, "pct": pct})
         label = format_code_label(code, value_labels)
         rows.append({"label": label, "cells": row_cells})
@@ -1032,15 +1025,12 @@ def crosstab_single_response_grid(df, var_group, meta_rows, value_label_dict):
             counts = attr_data[var_name]["counts"]
             base = attr_data[var_name]["base"]
             count = sum(int(counts.get(c, 0)) for c in top_codes)
-            pct = f"{(count/base)*100}%" if base > 0 else "0%"
+            pct = f"{(count/base)*100:.1f}%" if base > 0 else "0%"
             top_row["cells"].append({"count": count, "pct": pct})
         rows.append(top_row)
 
-        # --- Mean, Median, StdDev ---
-        mean_row, std_row = (
-            {"label": "Mean", "cells": []},
-            {"label": "StdDev", "cells": []},
-        )
+        # --- Mean, StdDev ---
+        mean_row, std_row = {"label": "Mean", "cells": []}, {"label": "StdDev", "cells": []}
         for var_name, _ in attributes:
             series = attr_data[var_name]["series"]
             if len(series) > 0:
@@ -1051,9 +1041,22 @@ def crosstab_single_response_grid(df, var_group, meta_rows, value_label_dict):
                 std_row["cells"].append({"count": 0})
         rows.extend([mean_row, std_row])
 
-    # ✅ merge "Others"
+    # ✅ Merge "Others"
     rows = merge_others(rows, total_base, is_cells=True)
 
+    # ✅ Add Total row AFTER merge_others, so it’s never dropped
+    total_row = {"label": "Base", "cells": []}
+    for var_name, _ in attributes:
+        base = attr_data[var_name]["base"]
+        total_row["cells"].append({
+            "count": int(base),
+            "pct": "100.0%"
+        })
+
+    # ✅ Place Total at TOP
+    rows.insert(0, total_row)
+
+    # --- Final matrix result
     result = {
         "Matrix": {
             "base": total_base,
@@ -1063,7 +1066,7 @@ def crosstab_single_response_grid(df, var_group, meta_rows, value_label_dict):
         }
     }
 
-    # --- add summaries only for rating ---
+    # --- Add summaries (already correct) ---
     if add_type == "rating":
         middle_code = scale_codes[len(scale_codes)//2] if len(scale_codes) % 2 == 1 else None
 
@@ -1073,18 +1076,25 @@ def crosstab_single_response_grid(df, var_group, meta_rows, value_label_dict):
                 counts = attr_data[var_name]["counts"]
                 base = attr_data[var_name]["base"]
                 count = sum(int(counts.get(c, 0)) for c in codes)
-                pct = f"{(count/base)*100}%" if base > 0 else "0%"
+                pct = f"{(count / base) * 100:.0f}%" if base > 0 else "0%"
                 row["cells"].append({"count": count, "pct": pct})
             return row
 
         def build_summary_table(summary_label, codes):
+            summary_row = build_summary(summary_label, codes)
+            total_row = {"label": "Total", "cells": []}
+            for var_name, _ in attributes:
+                base = attr_data[var_name]["base"]
+                total_row["cells"].append({
+                    "count": int(base),
+                    "pct": "100%"
+                })
             return {
                 "base": total_base,
                 "columns": [label for _, label in attributes],
-                "rows": [build_summary(summary_label, codes)]
+                "rows": [total_row, summary_row]
             }
 
-        # ✅ per-column summaries
         result["Top Summary"] = build_summary_table("Top Summary", [scale_codes[-1]])
         result["Top2 Summary"] = build_summary_table("Top2 Summary", scale_codes[-2:])
         result["Bottom Summary"] = build_summary_table("Bottom Summary", [scale_codes[0]])
@@ -1093,7 +1103,6 @@ def crosstab_single_response_grid(df, var_group, meta_rows, value_label_dict):
         if middle_code is not None:
             result["Middle Summary"] = build_summary_table("Middle Summary", [middle_code])
 
-        # ✅ Mean Summary (per column)
         mean_row = {"label": "Mean", "cells": []}
         for var_name, _ in attributes:
             series = attr_data[var_name]["series"]
@@ -1104,20 +1113,16 @@ def crosstab_single_response_grid(df, var_group, meta_rows, value_label_dict):
             "rows": [mean_row]
         }
 
-        # ✅ Apply average/total row adjustments
         summary_keys = [
-            "Top Summary",
-            "Top2 Summary",
-            "Bottom Summary",
-            "Bottom2 Summary",
-            "Middle Summary",
-            "Mean Summary"
+            "Top Summary", "Top2 Summary", "Bottom Summary", "Bottom2 Summary",
+            "Middle Summary", "Mean Summary"
         ]
-
         for key in summary_keys:
             if key in result and result[key]:
                 result[key] = add_average_or_total_row(result[key], key)
+
     return result
+
 
 
 
@@ -1229,7 +1234,7 @@ def crosstab_multi_response_grid(df, var_group, group_rows, value_label_dict):
     rows = []
 
     # Total row
-    total_row = {"label": "Total", "cells": []}
+    total_row = {"label": "Base", "cells": []}
     for _ in columns:
         total_row["cells"].append({"count": base, "pct": "100%"})
     rows.append(total_row)
@@ -1354,7 +1359,7 @@ def crosstab_multi_response_grid_with_topbreak(
         rows = []
         # Total row
         total_row = {
-            "label": "Total",
+            "label": "Base",
             "cells": [{"count": base, "pct": "100%"} for _ in columns],
         }
         rows.append(total_row)
