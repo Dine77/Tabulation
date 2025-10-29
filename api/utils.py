@@ -1545,3 +1545,219 @@ def crosstab_multi_response_grid_with_topbreak(
 
 
     return {"matrix": matrix_list, "columns": col_defs}
+
+
+# ---------- Numeric Grid ----------
+def build_numeric_grid(df, var_group, group_rows, meta_df):
+    result = []
+    base = len(df)
+
+    means = []
+    stds = []
+
+    for var in group_rows:
+        # Get label from meta, fallback to variable name
+        label = (
+            meta_df.loc[meta_df["Var_Name"] == var, "Var_Label"].values[0]
+            if not meta_df.empty
+            else var
+        )
+
+        series = df[var].dropna()
+        mean_val = series.mean()
+        std_val = series.std()
+
+        means.append(mean_val)
+        stds.append(std_val)
+
+        result.append({
+            "label": label,
+            "values": [round(mean_val, 2), round(std_val, 2)]
+        })
+
+    # 🔹 Compute base as average of all means/stds
+    avg_mean = round(sum(means) / len(means), 2) if means else 0
+    avg_std = round(sum(stds) / len(stds), 2) if stds else 0
+
+    # 🔹 Insert base row at top
+    base_row = {
+        "label": "Base",
+        "values": [avg_mean]
+    }
+
+    # Combine final rows
+    final_rows = result
+
+    return {
+        "topbreak_label": "Total",
+        "Matrix": {
+            "base": {
+                "count": base,
+                "avg_mean": avg_mean,
+            },
+            "columns": ["Mean", "Std Dev"],
+            "rows": final_rows
+        }
+    }
+
+# ---------- Numeric Grid with Topbreak ----------
+def build_numeric_grid_topbreak(
+    df, var_group, group_rows, topbreak_title, meta_df, value_label_dict, sig_level=95
+):
+    import numpy as np
+    import pandas as pd
+    import math
+
+    # --- Step 1: Resolve topbreak variable ---
+    topbreak_var = None
+    if topbreak_title:
+        topbreak_row = meta_df[meta_df["Table_Title"] == topbreak_title]
+        topbreak_var = (
+            topbreak_row.iloc[0]["Var_Name"]
+            if not topbreak_row.empty
+            else topbreak_title
+        )
+
+    # Clean up variable name (e.g. "E11: Single select" → "E11")
+    if topbreak_var and ":" in topbreak_var:
+        topbreak_var = topbreak_var.split(":")[0].strip()
+
+    # Validate
+    if topbreak_var not in df.columns:
+        raise ValueError(f"Topbreak variable '{topbreak_var}' not found in dataframe columns")
+
+    # --- Step 2: Decipher-style sig-test (population variance + one-tailed) ---
+    def run_sig_test(p_mean, p_std, p_n, c_mean, c_std, c_n, sig_level=95):
+        if p_n <= 1 or c_n <= 1:
+            return ""
+        try:
+            # convert sample std → population variance (Decipher uses population)
+            p_var = (p_std ** 2) * ((p_n - 1) / p_n)
+            c_var = (c_std ** 2) * ((c_n - 1) / c_n)
+            pooled_se = math.sqrt((p_var / p_n) + (c_var / c_n))
+            if pooled_se == 0:
+                return ""
+
+            z_score = (p_mean - c_mean) / pooled_se
+
+            # one-tailed critical values (Decipher default)
+            z_critical = {80: 0.842, 90: 1.282, 95: 1.645, 99: 2.326}.get(sig_level, 1.645)
+
+            if z_score > z_critical:
+                return "UP"
+            elif z_score < -z_critical:
+                return "DOWN"
+            else:
+                return ""
+        except Exception:
+            return ""
+
+    # --- Step 3: Build topbreak levels (sorted by value order) ---
+    raw_levels = df[topbreak_var].dropna().unique().tolist()
+    try:
+        raw_levels = sorted(raw_levels, key=lambda x: float(x))
+    except Exception:
+        raw_levels = sorted(raw_levels, key=lambda x: str(x))
+
+    # if value_label_dict defines order → preserve it
+    if value_label_dict.get(topbreak_var):
+        defined_order = list(value_label_dict[topbreak_var].keys())
+        ordered = []
+        for k in defined_order:
+            for r in raw_levels:
+                if str(r) == str(k) or str(int(float(r))) == str(k):
+                    ordered.append(r)
+        for r in raw_levels:
+            if r not in ordered:
+                ordered.append(r)
+        raw_levels = ordered
+
+    topbreak_levels = ["Total"] + raw_levels
+    letters = [chr(65 + i) for i in range(len(topbreak_levels))]
+
+    # --- Step 4: Column headers with correct labels ---
+    columns = []
+    for tb in topbreak_levels:
+        subset = df if tb == "Total" else df[df[topbreak_var] == tb]
+        base = len(subset)
+
+        if tb == "Total":
+            display_label = "Total"
+        else:
+            tb_key = str(int(tb)) if isinstance(tb, (int, float, np.integer)) else str(tb)
+            display_label = value_label_dict.get(topbreak_var, {}).get(tb_key)
+            if display_label is None:
+                try:
+                    tb_int = int(float(tb))
+                    display_label = value_label_dict.get(topbreak_var, {}).get(tb_int)
+                except:
+                    display_label = str(tb)
+            if display_label is None:
+                display_label = str(tb)
+
+        columns.append({
+            "label": display_label,
+            "letter": letters[topbreak_levels.index(tb)],
+            "base_pct": "100%",
+            "base_count": int(base)
+        })
+
+    # --- Step 5: Build subtables (each numeric variable) ---
+    subtables = []
+    for var in group_rows:
+        label = (
+            meta_df.loc[meta_df["Var_Name"] == var, "Var_Label"].values[0]
+            if not meta_df.empty else var
+        )
+
+        base_row = {"label": "Base", "values": []}
+        mean_row = {"label": "Mean", "values": []}
+        std_row  = {"label": "Std Dev", "values": []}
+
+        means, stds, bases = [], [], []
+
+        for tb in topbreak_levels:
+            subset = df if tb == "Total" else df[df[topbreak_var] == tb]
+            series = subset[var].dropna()
+
+            base = len(series)
+            # Decipher uses population std (ddof=0)
+            mean_val = round(series.mean(), 2) if base > 0 else 0
+            std_val  = round(series.std(ddof=0), 2) if base > 0 else 0
+
+            base_row["values"].append({"pct": "100%", "count": int(base)})
+            mean_row["values"].append(mean_val)
+            std_row["values"].append(std_val)
+
+            means.append(mean_val)
+            stds.append(std_val)
+            bases.append(base)
+
+        # --- Step 6: Sig test vs Total (Decipher style) ---
+        total_mean, total_std, total_base = means[0], stds[0], bases[0]
+        sigs = [""]
+        for i in range(1, len(topbreak_levels)):
+            sig = run_sig_test(
+                means[i], stds[i], bases[i],
+                total_mean, total_std, total_base,
+                sig_level
+            )
+            # uppercase if higher, lowercase if lower
+            if sig == "UP":
+                sigs.append(letters[i])
+            elif sig == "DOWN":
+                sigs.append(letters[i].upper())
+            else:
+                sigs.append("")
+        mean_row["sig"] = sigs
+
+        subtables.append({
+            "title": label,
+            "rows": [base_row, mean_row, std_row]
+        })
+
+    # --- Step 7: Return formatted result ---
+    return {
+        "columns": columns,
+        "subtables": subtables
+    }

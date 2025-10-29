@@ -13,7 +13,7 @@ import pandas as pd
 from .utils import crosstab_open_ended, log_activity,load_project_meta, crosstab_multi_response_with_topbreak,crosstab_numeric_with_topbreak,crosstab_open_ended_with_topbreak,crosstab_single_response_grid_with_topbreak
 import math
 from .utils import crosstab_single_choice, crosstab_multi_response,crosstab_numeric,crosstab_single_response_grid,crosstab_nps,crosstab_single_choice_with_topbreak,crosstab_multi_response_grid,crosstab_multi_response_grid_with_topbreak
-
+from .utils import build_numeric_grid,build_numeric_grid_topbreak
 
 
 # Helper to load meta Excel as DataFrame
@@ -527,6 +527,22 @@ def quick_crosstab(request, project_id):
             "data": table_data
         })
 
+    # --- Numeric Grid (NG) ---
+    ng_groups = meta_df[meta_df["Question_Type"].str.upper() == "NRG"]["Var_Grp"].unique()
+    for grp in ng_groups:
+        group_rows = meta_df[meta_df["Var_Grp"] == grp]
+        table_title = group_rows.iloc[0]["Table_Title"]
+        table_data = build_numeric_grid(df, grp, group_rows["Var_Name"], meta_df)
+        output.append({
+            "question": table_title,
+            "var_group": grp,
+            "type": "NRG",
+            "data": {
+                "matrix": [table_data]
+            }
+        })
+    
+
 
     return Response(clean_for_json(output))
     
@@ -720,5 +736,33 @@ def new_crosstab(request, project_id):
             "data": table_data,
             "crosstab_type": "new"
         })    
+
+
+    # --- Numeric Grid with Topbreak (multi-table view) ---
+    ngtb_groups = meta_df[meta_df["Question_Type"].str.upper() == "NRG"]["Var_Grp"].unique()
+
+    for grp in ngtb_groups:
+        group_rows = meta_df[meta_df["Var_Grp"] == grp]["Var_Name"]
+        table_title = meta_df.loc[meta_df["Var_Grp"] == grp, "Table_Title"].iloc[0]
+
+        table_data = build_numeric_grid_topbreak(
+            df,
+            grp,
+            group_rows,
+            topbreak_title,   # passed from payload
+            meta_df,
+            value_label_dict,
+            sig_level=sig_level
+        )
+
+        output.append({
+            "question": table_title,
+            "var_group": grp,
+            "type": "NRG",
+            "data": {
+                "matrix": table_data
+            },
+            "crosstab_type": "new"
+        })
 
     return Response(output)

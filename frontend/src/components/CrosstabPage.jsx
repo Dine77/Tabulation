@@ -317,6 +317,125 @@ function CrosstabPage() {
     return [...fixedTop, ...sortable, ...fixedBottom];
   };
 
+  // -------- Numeric Grid Renderer ----------
+  const renderNumericGrid = (matrixObj, groupIdx, question) => {
+    if (!matrixObj) return null;
+
+    const { base, columns, rows } = matrixObj.Matrix;
+
+    return (
+      <div
+        id={`matrix_${groupIdx}`}
+        className="bg-white border rounded-lg shadow p-4 mb-6"
+      >
+        {/* Header: question + export button */}
+        <div className="flex justify-between items-center mb-3">
+          <div className="text-green-700 font-semibold">{question}</div>
+          <button className="text-sm text-blue-600 hover:underline">
+            Export
+          </button>
+        </div>
+
+        {/* Table */}
+        <table className="w-full text-sm border-collapse border border-black-300">
+          <thead className="bg-gray-300">
+            <tr>
+              <th className="border border-black-300 p-2 text-left">Base</th>
+              <th className="border border-black-300 p-2 text-center" colSpan={columns.length}>
+                <div className="flex flex-col items-center">
+                  <span className="font-semibold text-gray-800">
+                    {base.avg_mean}
+                  </span>
+                  <span className="text-xs text-gray-600">
+                    {base.count}
+                  </span>
+                </div>
+              </th>
+
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => (
+              <React.Fragment key={i}>
+                <tr>
+                  <td className="border border-black-300 p-2  text-center font-normal" rowSpan={columns.length}>{row.label}</td>
+                  <td className="border border-black-300 p-2">{columns[0]}</td>
+                  <td className="border border-black-300 p-2 text-left">
+                    {row.values[0]}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="border border-black-300 p-2">{columns[1]}</td>
+                  <td className="border border-black-300 p-2 text-left">
+                    {row.values[1]}
+                  </td>
+                </tr>
+              </React.Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div >
+    );
+  };
+  // -------- Numeric Grid with Topbreak Renderer ----------
+  const renderNumericGridMultiTable = (matrixObj, groupIdx, question) => {
+    const { columns, subtables } = matrixObj;
+
+    return (
+      <div
+        id={groupIdx} className="bg-white border rounded-lg shadow p-4 mb-6">
+        <div className="flex justify-between items-center mb-3">
+          <div className="text-green-700 font-semibold">{question}</div>
+          <button className="text-sm text-blue-600 hover:underline">Export</button>
+        </div>
+
+        {subtables.map((table, idx) => (
+          <div key={idx} className="mb-4 border rounded-lg overflow-hidden">
+            <div className="bg-gray-50 text-blue-600 font-bold mb-2">{table.title}</div>
+            <table className="w-full text-sm border-collapse border border-gray-300">
+              <thead className="bg-gray-100">
+                <tr>
+                  {/*  */}
+                  <th className="border border-gray-300 p-2 text-left">Label</th>
+                  {columns.map((col, i) => (
+                    <th key={i} className="border border-gray-300 p-2 text-center">
+                      {col.label} <span className="text-blue-600 font-bold mr-1">{col.letter}</span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {table.rows.map((row, i) => (
+                  <tr key={i}>
+                    <td className="border border-gray-300 p-2 font-medium">{row.label}</td>
+                    {row.values.map((val, j) => (
+                      <td key={j} className="border border-gray-300 p-2 text-center">
+                        {typeof val === "object" ? (
+                          <>
+                            <span>{val.pct}</span><br />
+                            <span>{val.count}</span>
+                          </>
+                        ) : (
+                          <>
+                            {val}
+                            {row.sig && row.sig[j] && (
+                              <sup className="text-red-600 ml-1">{row.sig[j]}</sup>
+                            )}
+                          </>
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+    );
+  };
+  // -------- NPS Renderer ----------
+
 
   const renderNPSCard = (npsObj, question, tableKey) => {
     if (!npsObj) return null;
@@ -1056,6 +1175,10 @@ function CrosstabPage() {
             if (grp.add_type === "NPS") {
               card = renderNPSCard(payload.NPS, grp.question, `matrix_${gIdx}`);
             }
+            else if ((grp.type !== "SRG" || grp.type !== "MRG") && grp.type === "NRG" && grp.crosstab_type === "new") {
+              console.log("Rendering new NRG Crosstab");
+              card = renderNumericGridMultiTable(grp.data.matrix, `matrix_${gIdx}`, grp.question);
+            }
             else if ((grp.type === "SRG" || grp.type === "MRG") && grp.crosstab_type === "new") {
               // pass the *array* of matrices for SRG
               card = renderMatrixCard(grp.data.matrix, gIdx, `matrix_${gIdx}`, grp.question);
@@ -1073,6 +1196,11 @@ function CrosstabPage() {
               const total = grp.data.Total;
               card = renderQuickCrosstabCard(total, gIdx, `matrix_${gIdx}`, grp.question, grp.type);
             }
+            else if (grp.type === "NRG") {
+              return renderNumericGrid(grp.data.matrix[0], gIdx, grp.question);
+            }
+
+
             else {
               // Normal (matrix with rows[].cells)
               card = renderMatrixCard(grp.data, gIdx, `matrix_${gIdx}`, grp.question);
