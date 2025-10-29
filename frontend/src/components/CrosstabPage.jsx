@@ -426,9 +426,9 @@ function CrosstabPage() {
               <th className="border border-black-300 p-2 text-left">Base</th>
               <th className="border border-black-300 p-2 text-center" colSpan={columns.length}>
                 <div className="flex flex-col items-center">
-                  <span className="font-semibold text-gray-800">
+                  {/* <span className="font-semibold text-gray-800">
                     {base.avg_mean}
-                  </span>
+                  </span> */}
                   <span className="text-xs text-gray-600">
                     {base.count}
                   </span>
@@ -479,7 +479,7 @@ function CrosstabPage() {
               <thead className="bg-gray-100">
                 <tr>
                   {/*  */}
-                  <th className="border border-gray-300 p-2 text-left">Label</th>
+                  <th className="border border-gray-300 p-2 text-left"></th>
                   {columns.map((col, i) => (
                     <th key={i} className="border border-gray-300 p-2 text-center">
                       {col.label} <span className="text-blue-600 font-bold mr-1">{col.letter}</span>
@@ -702,7 +702,7 @@ function CrosstabPage() {
                   <table className="min-w-full border-collapse text-xs">
                     <thead className="bg-gray-100">
                       <tr>
-                        <th className="border px-3 py-2 text-left bg-gray-100">Scale</th>
+                        <th className="border px-3 py-2 text-left bg-gray-100"></th>
                         {catCols.map((c, ci) => (
                           <th key={ci} className="border px-3 py-2 text-center">
                             {c.letter && (
@@ -773,7 +773,7 @@ function CrosstabPage() {
           <table className="min-w-full border-collapse text-xs">
             <thead className="bg-gray-100">
               <tr>
-                <th className="border px-3 py-2 text-left bg-gray-100">Scale</th>
+                <th className="border px-3 py-2 text-left bg-gray-100"></th>
                 {cols.map((c, ci) => (
                   <th key={ci} className="border px-3 py-2 text-center">
                     {c.letter && (
@@ -839,7 +839,7 @@ function CrosstabPage() {
             <table className="min-w-full border-collapse text-xs">
               <thead className="bg-gray-100">
                 <tr>
-                  <th className="border px-3 py-2 text-left bg-gray-100">Scale</th>
+                  <th className="border px-3 py-2 text-left bg-gray-100"></th>
                   {cols.map((c, ci) => (
                     <th key={ci} className="border px-3 py-2 text-center">
                       {c.letter && (
@@ -951,7 +951,7 @@ function CrosstabPage() {
           <table className="min-w-full border-collapse text-xs">
             <thead className="bg-gray-50">
               <tr>
-                <th className="border px-3 py-2 text-left bg-gray-100">Attribute</th>
+                <th className="border px-3 py-2 text-left bg-gray-100"></th>
                 <th className="border px-3 py-2 text-center bg-gray-100">Qualified</th>
               </tr>
             </thead>
@@ -1037,7 +1037,7 @@ function CrosstabPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="border px-3 py-2 text-left bg-gray-100">
-                  Attribute
+
                 </th>
                 {cols.map((c, ci) => (
                   <th
@@ -1259,7 +1259,7 @@ function CrosstabPage() {
               card = renderNPSCard(payload.NPS, grp.question, `matrix_${gIdx}`);
             }
             else if ((grp.type !== "SRG" || grp.type !== "MRG") && grp.type === "NRG" && grp.crosstab_type === "new") {
-              console.log("Rendering new NRG Crosstab");
+
               card = renderNumericGridMultiTable(grp.data.matrix, `matrix_${gIdx}`, grp.question);
             }
             else if ((grp.type === "SRG" || grp.type === "MRG") && grp.crosstab_type === "new") {
