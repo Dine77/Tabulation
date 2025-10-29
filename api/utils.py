@@ -748,17 +748,17 @@ def crosstab_numeric_with_topbreak(df, var_name, topbreak_title, meta, meta_df, 
 
 
 # ---------- Open Ended ----------
-def crosstab_open_ended_with_topbreak(df, var_name, topbreak_title, meta, meta_df):
-    cols, columns = build_topbreak(df, meta_df, topbreak_title, meta)
-    rows = []
+# def crosstab_open_ended_with_topbreak(df, var_name, topbreak_title, meta, meta_df):
+#     cols, columns = build_topbreak(df, meta_df, topbreak_title, meta)
+#     rows = []
 
-    for _, row in df[[var_name]].dropna().iterrows():
-        row_data = {"label": str(row[var_name]), "cells": []}
-        for col_name, sub_df in cols:
-            row_data["cells"].append({"count": "", "pct": ""})
-        rows.append(row_data)
+#     for _, row in df[[var_name]].dropna().iterrows():
+#         row_data = {"label": str(row[var_name]), "cells": []}
+#         for col_name, sub_df in cols:
+#             row_data["cells"].append({"count": "", "pct": ""})
+#         rows.append(row_data)
 
-    return {"columns": columns, "rows": rows}
+#     return {"columns": columns, "rows": rows}
 
 # utils.py
 def get_var_name_from_title(meta_df, title):
@@ -1761,3 +1761,39 @@ def build_numeric_grid_topbreak(
         "columns": columns,
         "subtables": subtables
     }
+
+
+def build_wordcloud_data(df, var_name, table_title, min_length=3, max_words=100):
+    import re
+    from collections import Counter
+    import nltk
+    from nltk.corpus import stopwords
+
+    nltk.download("stopwords", quiet=True)
+    stop_words = set(stopwords.words("english"))
+
+    # --- Extract all responses ---
+    text_data = df[var_name].dropna().astype(str).tolist()
+
+    # --- Clean text and tokenize ---
+    words = []
+    for text in text_data:
+        clean = re.sub(r"[^A-Za-z\s]", "", text).lower()
+        for w in clean.split():
+            if len(w) >= min_length and w not in stop_words:
+                words.append(w)
+
+    # --- Count word frequencies ---
+    freq = Counter(words)
+    top_words = freq.most_common(max_words)
+
+    # --- Format for frontend ---
+    wordcloud_data = [{"name": word, "value": count} for word, count in top_words]
+
+    return {
+        "question": table_title,
+        "var_name": var_name,
+        "type": "WordCloud",
+        "data": wordcloud_data
+    }
+

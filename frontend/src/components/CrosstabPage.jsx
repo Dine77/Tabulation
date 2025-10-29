@@ -4,6 +4,9 @@ import { useParams, useNavigate } from "react-router-dom";
 import { saveAs } from "file-saver";
 import * as XLSX from "xlsx";
 import { Dialog } from "@headlessui/react";
+import * as echarts from "echarts";
+import "echarts-wordcloud";
+import WordCloudChart from "./WordCloudChart";
 
 
 // Modal for New Crosstab
@@ -316,6 +319,86 @@ function CrosstabPage() {
 
     return [...fixedTop, ...sortable, ...fixedBottom];
   };
+
+  // -------- Word Cloud Renderer ----------
+  const renderWordCloud = ({ data, question }) => {
+    useEffect(() => {
+      if (!data || data.length === 0) return;
+
+      const chartDom = document.getElementById(`wordcloud_${question}`);
+      const chart = echarts.init(chartDom);
+
+      const option = {
+        title: {
+          text: question || "Word Cloud",
+          left: "center",
+          textStyle: {
+            fontSize: 18,
+            color: "#2563eb", // blue
+            fontWeight: "bold",
+          },
+        },
+        tooltip: {
+          show: true,
+          formatter: (item) => `${item.name}: ${item.value}`,
+        },
+        series: [
+          {
+            type: "wordCloud",
+            shape: "circle", // or 'diamond' | 'triangle' | 'pentagon' | 'star'
+            keepAspect: false,
+            gridSize: 2,
+            sizeRange: [12, 60], // min/max font size
+            rotationRange: [-45, 90],
+            rotationStep: 45,
+            textStyle: {
+              fontFamily: "Poppins, sans-serif",
+              fontWeight: "bold",
+              color: () => {
+                // Random bright color
+                const r = Math.round(Math.random() * 160);
+                const g = Math.round(Math.random() * 160);
+                const b = Math.round(Math.random() * 160);
+                return `rgb(${r}, ${g}, ${b})`;
+              },
+            },
+            emphasis: {
+              textStyle: {
+                shadowBlur: 10,
+                shadowColor: "#333",
+                color: "#000",
+              },
+            },
+            data: data,
+          },
+        ],
+      };
+
+      chart.setOption(option);
+      window.addEventListener("resize", chart.resize);
+
+      return () => {
+        window.removeEventListener("resize", chart.resize);
+        chart.dispose();
+      };
+    }, [data, question]);
+
+    return (
+      <div
+        id={`wordcloud_${question}`}
+        style={{
+          width: "100%",
+          height: "500px",
+          margin: "0 auto",
+          background: "#fff",
+          borderRadius: "12px",
+          boxShadow: "0 0 8px rgba(0,0,0,0.1)",
+          padding: "20px",
+        }}
+      ></div>
+    );
+  };
+
 
   // -------- Numeric Grid Renderer ----------
   const renderNumericGrid = (matrixObj, groupIdx, question) => {
@@ -1195,6 +1278,11 @@ function CrosstabPage() {
               // Quick Crosstab SC/MR/NR             
               const total = grp.data.Total;
               card = renderQuickCrosstabCard(total, gIdx, `matrix_${gIdx}`, grp.question, grp.type);
+            }
+            else if (grp.type === "WordCloud") {
+              if (grp.data.length !== 0) {
+                return <WordCloudChart data={grp.data} chartId={`${gIdx}`} question={grp.question} />;
+              }
             }
             else if (grp.type === "NRG") {
               return renderNumericGrid(grp.data.matrix[0], gIdx, grp.question);

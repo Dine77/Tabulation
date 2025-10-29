@@ -10,11 +10,11 @@ from .models import Project,ActivityLog
 from .serializers import ProjectSerializer
 import pyreadstat
 import pandas as pd
-from .utils import crosstab_open_ended, log_activity,load_project_meta, crosstab_multi_response_with_topbreak,crosstab_numeric_with_topbreak,crosstab_open_ended_with_topbreak,crosstab_single_response_grid_with_topbreak
+from .utils import log_activity,load_project_meta, crosstab_multi_response_with_topbreak,crosstab_numeric_with_topbreak,crosstab_single_response_grid_with_topbreak
 import math
 from .utils import crosstab_single_choice, crosstab_multi_response,crosstab_numeric,crosstab_single_response_grid,crosstab_nps,crosstab_single_choice_with_topbreak,crosstab_multi_response_grid,crosstab_multi_response_grid_with_topbreak
 from .utils import build_numeric_grid,build_numeric_grid_topbreak
-
+from .utils import build_wordcloud_data
 
 # Helper to load meta Excel as DataFrame
 @api_view(["GET"])
@@ -488,18 +488,18 @@ def quick_crosstab(request, project_id):
             })
 
     # --- Open Ended (OE) ---
-    oe_rows = meta_df[meta_df["Question_Type"].str.upper() == "OE"]
-    for _, row in oe_rows.iterrows():
-        var_name = str(row["Var_Name"]).strip()
-        table_title = str(row["Table_Title"])
-        if var_name in df.columns:
-            table_data = crosstab_open_ended(df, var_name)
-            output.append({
-                "question": table_title,
-                "var_name": var_name,
-                "type": "OE",
-                "data": table_data
-            })
+    # oe_rows = meta_df[meta_df["Question_Type"].str.upper() == "OE"]
+    # for _, row in oe_rows.iterrows():
+    #     var_name = str(row["Var_Name"]).strip()
+    #     table_title = str(row["Table_Title"])
+    #     if var_name in df.columns:
+    #         table_data = crosstab_open_ended(df, var_name)
+    #         output.append({
+    #             "question": table_title,
+    #             "var_name": var_name,
+    #             "type": "OE",
+    #             "data": table_data
+    #         })
 
     # --- Single Response Grid (SRG) ---
     srg_groups = meta_df[meta_df["Question_Type"].str.upper() == "SRG"]["Var_Grp"].unique()
@@ -542,6 +542,24 @@ def quick_crosstab(request, project_id):
             }
         })
     
+
+      # --- Open-ended Question Type ---
+    # oe_groups = meta_df[meta_df["Question_Type"].str.upper() == "OE"]["Var_Name"].unique()
+
+    # for var in oe_groups:
+    #     table_data = build_wordcloud_data(df, var)
+    #     output.append(table_data)
+
+    oe_groups = meta_df[meta_df["Question_Type"].str.upper() == "OE"]["Var_Name"].unique()
+
+    for var in oe_groups:
+        # ✅ Get the question text (Table_Title)
+        table_title = meta_df.loc[meta_df["Var_Name"] == var, "Table_Title"].iloc[0]
+
+        # ✅ Pass both var and title
+        table_data = build_wordcloud_data(df, var, table_title)
+
+        output.append(table_data)
 
 
     return Response(clean_for_json(output))
@@ -764,5 +782,8 @@ def new_crosstab(request, project_id):
             },
             "crosstab_type": "new"
         })
+    
+
+
 
     return Response(output)

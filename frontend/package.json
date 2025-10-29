@@ -12,6 +12,7 @@
   "dependencies": {
     "@headlessui/react": "^2.2.8",
     "@tailwindcss/vite": "^4.1.13",
+    "echarts-wordcloud": "^2.1.0",
     "file-saver": "^2.0.5",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
