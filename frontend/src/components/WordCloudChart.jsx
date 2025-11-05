@@ -93,7 +93,7 @@ const WordCloudChart = ({ data, question, chartId }) => {
 
     return (
         <div
-            id={`wordcloud_container_${chartId}`}
+            id={`matrix_${chartId}`}
             style={{
                 position: "relative",
                 width: "100%",

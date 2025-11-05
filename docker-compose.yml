@@ -69,11 +69,11 @@ volumes:
   mongo_data:
 
     # Build & push examples
-    # docker build -t dineshrajannds/api:v3. -f api/Dockerfile ./api
-    # docker build -t dineshrajannds/backend:v3. -f backend/Dockerfile
-    # docker build -t dineshrajannds/frontend:v3. -f frontend/Dockerfile ./frontend
+    # docker build -t dineshrajannds/api:v8. -f api/Dockerfile ./api
+    # docker build -t dineshrajannds/backend:v8 . -f backend/Dockerfile
+    # docker build -t dineshrajannds/frontend:v8. -f frontend/Dockerfile ./frontend
 
     # docker login
-    # docker push dineshrajannds/backend:v3.
-    # docker push dineshrajannds/api:v3.
-    # docker push dineshrajannds/frontend:v3.
+    # docker push dineshrajannds/backend:v8
+    # docker push dineshrajannds/api:v8
+    # docker push dineshrajannds/frontend:v8

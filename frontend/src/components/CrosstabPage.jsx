@@ -287,6 +287,7 @@ function CrosstabPage() {
 
   const getSortedRows = (tableObj, tableKey) => {
     if (!tableObj?.rows) return [];
+
     const cfg = sortConfigs[tableKey] || { colIndex: null, direction: "none" };
     const rows = [...tableObj.rows];
 
@@ -301,14 +302,24 @@ function CrosstabPage() {
       return rows;
     }
 
-    const fixedTop = rows.filter((r) => r.label === "Total");
-    const fixedBottom = rows.filter((r) =>
-      ["Mean", "StdDev"].includes(r.label)
-    );
-    let sortable = rows.filter(
-      (r) => !["Total", "Mean", "StdDev"].includes(r.label)
+    // --- keep header rows (if any)
+    const fixedTop = rows.filter((r) => r.label === "");
+
+    // --- identify logical groups
+    const totalRow = rows.filter((r) => r.label === "Total");
+    const summaryRows = rows.filter((r) =>
+      ["Top 2", "Top 3", "Bottom 2", "Bottom 3", "Mean", "StdDev", "Count"].includes(r.label)
     );
 
+    // --- normal data rows (attributes only)
+    let sortable = rows.filter(
+      (r) =>
+        !["", "Total", "Top 2", "Top 3", "Bottom 2", "Bottom 3", "Mean", "StdDev", "Count"].includes(
+          r.label
+        )
+    );
+
+    // --- sort attributes if column sorting active
     if (cfg.colIndex !== null && cfg.direction !== "none") {
       sortable = sortable.sort((a, b) => {
         const aVal = a.cells?.[cfg.colIndex]?.count || 0;
@@ -317,8 +328,10 @@ function CrosstabPage() {
       });
     }
 
-    return [...fixedTop, ...sortable, ...fixedBottom];
+    // --- Final order: top → attributes → total → summaries
+    return [...fixedTop, ...sortable, ...totalRow, ...summaryRows];
   };
+
 
   // -------- Word Cloud Renderer ----------
   const renderWordCloud = ({ data, question }) => {
@@ -758,6 +771,7 @@ function CrosstabPage() {
     );
 
     const rows = getSortedRows(matrixObj, tableKey);
+    console.log(rows);
 
     return (
       <div

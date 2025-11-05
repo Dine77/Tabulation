@@ -13,3 +13,4 @@ fastapi
 uvicorn[standard]
 pymongo
 gunicorn>=21.2.0
+nltk
