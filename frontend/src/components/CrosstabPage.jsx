@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { saveAs } from "file-saver";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import { Dialog } from "@headlessui/react";
 import * as echarts from "echarts";
 import "echarts-wordcloud";
@@ -153,7 +153,7 @@ function CrosstabPage() {
 
   useEffect(() => {
     if (showNewModal) {
-      fetch(`http://127.0.0.1:8000/api/projects/${id}/meta_titles/`)
+      fetch(`https://apicrosstab.nnet-dataviz.com/api/projects/${id}/meta_titles/`)
         .then((res) => res.json())
         .then((data) => {
           setTopbreaks(data); // ✅ fills dropdown
@@ -171,7 +171,7 @@ function CrosstabPage() {
     setError(null);
 
     fetch(
-      `http://127.0.0.1:8000/api/projects/${id}/new_crosstab/?topbreak=${encodeURIComponent(topbreak)}&sig=${sigLevel}`
+      `https://apicrosstab.nnet-dataviz.com/api/projects/${id}/new_crosstab/?topbreak=${encodeURIComponent(topbreak)}&sig=${sigLevel}`
     )
       .then((res) => {
         if (!res.ok) throw new Error("Failed to generate new crosstab");
@@ -181,11 +181,13 @@ function CrosstabPage() {
         const arr = Array.isArray(data) ? data : [data];
         const normalized = arr.map((it, idx) => ({
           ...it,
-          question: it.question || it.Table_Title || it.var_name || `Q${idx + 1}`,
+          question: it.question || it.Table_Title || it.var_name || it.sortorder || `Q${idx + 1}`,
           data: it.data || it,
-          crosstab_type: "new",   // ✅ mark it so we can distinguish later
+          crosstab_type: "new",
+          sortorder: it.sortorder   // ✅ mark it so we can distinguish later
         }));
-        setGroups(normalized); // replace old tables
+        const newdata = normalized.sort((a, b) => a.sortorder - b.sortorder);
+        setGroups(newdata); // replace old tables
         setLoading(false);
       })
       .catch((err) => {
@@ -201,7 +203,7 @@ function CrosstabPage() {
   const runQuickCrosstab = () => {
     setLoading(true);
     setError(null);
-    fetch(`http://127.0.0.1:8000/api/projects/${id}/quick_crosstab/`)
+    fetch(`https://apicrosstab.nnet-dataviz.com/api/projects/${id}/quick_crosstab/`)
       .then((res) => {
         if (!res.ok) throw new Error("Failed to generate crosstab");
         return res.json();
@@ -215,6 +217,7 @@ function CrosstabPage() {
             it.Table_Title ||
             it.var_group ||
             it.var_name ||
+            it.sortorder ||
             `Q${idx + 1}`;
           return {
             question,
@@ -223,9 +226,11 @@ function CrosstabPage() {
             var_name: it.var_name ?? null,     // ✅ preserve var name
             type: it.type ?? "",               // ✅ keep type (SC, MR, SRG, etc.)
             add_type: it.add_type ?? it.addType ?? "",
+            sortorder: it.sortorder
           };
         });
-        setGroups(normalized);
+        const newdata = normalized.sort((a, b) => a.sortorder - b.sortorder);
+        setGroups(newdata);
         setLoading(false);
       })
       .catch((err) => {
@@ -268,6 +273,635 @@ function CrosstabPage() {
       `${keyName}.xlsx`
     );
   };
+
+
+
+  function exportToExcel(divId, data = [], question = "Report") {
+    try {
+      if (!Array.isArray(data) || data.length === 0) {
+        console.warn("⚠️ No data to export");
+        return;
+      }
+
+      const exportData = [];
+      const percentCells = {}; // track which cells are % values
+      const countCells = {}; // track count column to force numeric
+
+      // 🟩 Title row (merged later)
+      exportData.push([question]);
+      exportData.push([]); // blank row
+
+      // 🟩 Header row
+      exportData.push(["Label", "Percentage", "Count"]);
+
+      // 🟩 Data rows
+      data.forEach((row, idx) => {
+        const rowIndex = idx + 3; // offset (title + blank + header = 3)
+        const pctVal = row.pct ? parseFloat(row.pct.replace("%", "")) / 100 : "";
+        const countVal =
+          typeof row.count === "number" && !isNaN(row.count)
+            ? row.count
+            : row.count ?? "";
+
+        const rowData = [row.label || "", pctVal, countVal];
+        exportData.push(rowData);
+
+        // mark percentage cell
+        if (pctVal !== "") {
+          const cellRef = XLSX.utils.encode_cell({ r: rowIndex, c: 1 });
+          percentCells[cellRef] = true;
+        }
+
+        // mark count cell (always numeric)
+        if (countVal !== "") {
+          const cellRef = XLSX.utils.encode_cell({ r: rowIndex, c: 2 });
+          countCells[cellRef] = true;
+        }
+      });
+
+      // Create worksheet
+      const ws = XLSX.utils.aoa_to_sheet(exportData);
+
+      // 🟢 Merge the question title row across 3 columns
+      ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }];
+
+      // 🟢 Define styles
+      const titleStyle = {
+        font: { bold: true, sz: 13, color: { rgb: "1E4D2B" } },
+        alignment: { horizontal: "left", vertical: "center" },
+      };
+      const headerStyle = {
+        font: { bold: true },
+        fill: { fgColor: { rgb: "D9E1F2" } },
+        alignment: { horizontal: "center" },
+      };
+      const baseStyle = {
+        font: { bold: true },
+        fill: { fgColor: { rgb: "E7E6E6" } },
+      };
+      const totalStyle = { font: { bold: true } };
+
+      // 🟢 Apply styles + number formatting
+      const range = XLSX.utils.decode_range(ws["!ref"]);
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
+          if (!ws[cellRef]) continue;
+
+          const cell = ws[cellRef];
+          cell.s = cell.s || {};
+
+          // Title
+          if (R === 0) cell.s = titleStyle;
+          // Header
+          if (R === 2) cell.s = headerStyle;
+          // Base
+          if (data[R - 3]?.label?.toLowerCase().includes("base")) {
+            cell.s = baseStyle;
+          }
+          // Total
+          if (data[R - 3]?.label?.toLowerCase().includes("total")) {
+            cell.s = totalStyle;
+          }
+
+          // ✅ Apply % format only to Percentage column (B)
+          if (percentCells[cellRef]) {
+            cell.z = "0.0%"; // Excel % format
+          }
+
+          // ✅ Force Count column (C) to be numeric (no %)
+          if (countCells[cellRef]) {
+            cell.z = "0"; // integer format (no decimals, no %)
+          }
+        }
+      }
+
+      // Set column widths
+      ws["!cols"] = [
+        { wch: 30 },
+        { wch: 15 },
+        { wch: 10 },
+      ];
+
+      // Create workbook and export
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+
+      XLSX.writeFile(wb, `${question.replace(/\s+/g, "_")}.xlsx`);
+    } catch (err) {
+      console.error("❌ Export error:", err);
+    }
+  }
+
+
+
+  function exportCrosstabToExcel(divId, matrixObj = {}, question = "Report") {
+    try {
+      if (!matrixObj || !matrixObj.rows) {
+        console.warn("⚠️ Invalid matrixObj");
+        return;
+      }
+
+      const { base, columns = [], rows = [] } = matrixObj;
+
+      // --- Helper to build both sheets ---
+      const buildSheetData = (mode) => {
+        const exportData = [];
+        const percentCells = {}; // track which cells need % format
+        let currentRow = 0;
+
+        exportData.push([`${question}`]);
+        currentRow++;
+        exportData.push([]);
+        currentRow++;
+        exportData.push([`Base = ${base}`]);
+        currentRow++;
+        exportData.push([]);
+        currentRow++;
+        exportData.push(["Label", ...columns.map((c) => c.trim())]);
+        currentRow++;
+
+        rows.forEach((row) => {
+          const rowData = [row.label];
+          row.cells.forEach((cell, colIdx) => {
+            if (mode === "count") {
+              rowData.push(cell.count ?? "");
+            } else if (mode === "pct") {
+              // ✅ Convert string percent → real Excel percentage value
+              const pctVal = cell.pct ? parseFloat(cell.pct.replace("%", "")) / 100 : "";
+              rowData.push(pctVal);
+
+              // record the cell position for % formatting
+              if (pctVal !== "") {
+                const cellRef = XLSX.utils.encode_cell({
+                  r: currentRow,
+                  c: colIdx + 1, // +1 because label is column 0
+                });
+                percentCells[cellRef] = true;
+              }
+            }
+          });
+          exportData.push(rowData);
+          currentRow++;
+        });
+
+        return { exportData, percentCells };
+      };
+
+      const { exportData: countData } = buildSheetData("count");
+      const { exportData: pctData, percentCells } = buildSheetData("pct");
+
+      // --- Helper to create formatted sheet ---
+      const makeSheet = (data, columns, mode, percentCells) => {
+        const ws = XLSX.utils.aoa_to_sheet(data);
+
+        // Merge title + base
+        ws["!merges"] = [
+          { s: { r: 0, c: 0 }, e: { r: 0, c: columns.length } },
+          { s: { r: 2, c: 0 }, e: { r: 2, c: columns.length } },
+        ];
+
+        // Styles
+        const titleStyle = {
+          font: { bold: true, sz: 14, color: { rgb: "1E4D2B" } },
+          alignment: { horizontal: "left", vertical: "center" },
+        };
+        const baseStyle = {
+          font: { bold: true },
+          fill: { fgColor: { rgb: "E7E6E6" } },
+          alignment: { horizontal: "left" },
+        };
+        const headerStyle = {
+          font: { bold: true },
+          fill: { fgColor: { rgb: "D9E1F2" } },
+          alignment: { horizontal: "center" },
+        };
+        const totalStyle = { font: { bold: true } };
+
+        const range = XLSX.utils.decode_range(ws["!ref"]);
+
+        for (let R = range.s.r; R <= range.e.r; R++) {
+          for (let C = range.s.c; C <= range.e.c; C++) {
+            const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
+            if (!ws[cellRef]) continue;
+
+            const cell = ws[cellRef];
+            cell.s = cell.s || {};
+
+            // Title
+            if (R === 0) cell.s = titleStyle;
+            // Base
+            if (R === 2) cell.s = baseStyle;
+            // Header
+            if (R === 4) cell.s = headerStyle;
+            // Total
+            if (rows[R - 5]?.label?.toLowerCase().includes("total")) {
+              cell.s = totalStyle;
+            }
+
+            // ✅ Apply % format only for percentage sheet
+            if (mode === "pct" && percentCells[cellRef]) {
+              cell.z = "0.0%"; // Excel format
+            }
+          }
+        }
+
+        ws["!cols"] = [{ wch: 25 }, ...columns.map(() => ({ wch: 15 }))];
+        return ws;
+      };
+
+      // --- Create sheets
+      const wsCount = makeSheet(countData, columns, "count", {});
+      const wsPct = makeSheet(pctData, columns, "pct", percentCells);
+
+      // --- Create workbook ---
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, wsCount, "Count");
+      XLSX.utils.book_append_sheet(wb, wsPct, "Percentage");
+
+      // --- Export ---
+      XLSX.writeFile(wb, `${question.replace(/\s+/g, "_")}.xlsx`);
+    } catch (err) {
+      console.error("❌ Export error:", err);
+    }
+  }
+
+
+
+
+  function exportMultiTopbreakToExcel(divId, data = [], question = "Report") {
+    try {
+      if (!Array.isArray(data) || data.length === 0) {
+        console.warn("⚠️ No data to export");
+        return;
+      }
+
+      const wb = XLSX.utils.book_new();
+
+      // 🟢 Helper: Build combined data (mode = "count" or "pct")
+      const buildCombinedData = (mode) => {
+        const exportData = [];
+        const cellMeta = {}; // % style tracking
+        let currentRow = 0;
+
+        data.forEach((item) => {
+          const { topbreak_label, Matrix } = item;
+          const { base, columns = [], rows = [] } = Matrix;
+
+          // Dynamically handle column labels
+          const colHeaders = columns.map((c) =>
+            typeof c === "object"
+              ? `${c.label}${c.letter ? " (" + c.letter + ")" : ""}`
+              : c
+          );
+
+          // Section title
+          exportData.push([`${question} - ${topbreak_label}`]);
+          currentRow++;
+          exportData.push([]);
+          currentRow++;
+          exportData.push([`Base = ${base}`]);
+          currentRow++;
+          exportData.push([]);
+          currentRow++;
+
+          // Header
+          exportData.push(["Label", ...colHeaders]);
+          currentRow++;
+
+          // Rows
+          rows.forEach((row) => {
+            const rowData = [row.label];
+            row.cells.forEach((cell, colIdx) => {
+              if (mode === "count") {
+                const val = cell.sig ? `${cell.count}${cell.sig}` : cell.count ?? "";
+                rowData.push(val);
+              } else if (mode === "pct") {
+                const pctVal = cell.pct ? parseFloat(cell.pct.replace("%", "")) / 100 : "";
+                rowData.push(pctVal);
+                if (pctVal !== "") {
+                  const cellRef = XLSX.utils.encode_cell({
+                    r: currentRow,
+                    c: colIdx + 1,
+                  });
+                  cellMeta[cellRef] = { numFmt: "0.0%" };
+                }
+              }
+            });
+            exportData.push(rowData);
+            currentRow++;
+          });
+
+          // Add spacing between each topbreak
+          exportData.push([]);
+          exportData.push([]);
+          currentRow += 2;
+        });
+
+        return { exportData, cellMeta };
+      };
+
+      const { exportData: countData } = buildCombinedData("count");
+      const { exportData: pctData, cellMeta } = buildCombinedData("pct");
+
+      // 🟢 Helper: Style each sheet
+      const makeSheet = (data, mode, cellMeta) => {
+        const ws = XLSX.utils.aoa_to_sheet(data);
+
+        const titleStyle = {
+          font: { bold: true, sz: 13, color: { rgb: "1E4D2B" } },
+          alignment: { horizontal: "left", vertical: "center" },
+        };
+        const baseStyle = {
+          font: { bold: true },
+          fill: { fgColor: { rgb: "E7E6E6" } },
+          alignment: { horizontal: "left" },
+        };
+        const headerStyle = {
+          font: { bold: true },
+          fill: { fgColor: { rgb: "D9E1F2" } },
+          alignment: { horizontal: "center" },
+        };
+        const totalStyle = { font: { bold: true } };
+
+        const range = XLSX.utils.decode_range(ws["!ref"]);
+
+        for (let R = range.s.r; R <= range.e.r; R++) {
+          for (let C = range.s.c; C <= range.e.c; C++) {
+            const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
+            if (!ws[cellRef]) continue;
+            const val = (ws[cellRef].v || "").toString().toLowerCase();
+
+            if (val.startsWith(question.toLowerCase())) ws[cellRef].s = titleStyle;
+            else if (val.startsWith("base =")) ws[cellRef].s = baseStyle;
+            else if (val === "label") ws[cellRef].s = headerStyle;
+            else if (val.includes("total")) ws[cellRef].s = totalStyle;
+
+            // ✅ Real percentage format
+            if (mode === "pct" && cellMeta[cellRef]) {
+              ws[cellRef].z = cellMeta[cellRef].numFmt;
+            }
+          }
+        }
+
+        // Columns width (auto expand for large)
+        ws["!cols"] = [{ wch: 25 }, ...Array(10).fill({ wch: 15 })];
+
+        return ws;
+      };
+
+      // Create both sheets
+      const wsCount = makeSheet(countData, "count");
+      const wsPct = makeSheet(pctData, "pct", cellMeta);
+
+      // Add to workbook
+      XLSX.utils.book_append_sheet(wb, wsCount, "Count");
+      XLSX.utils.book_append_sheet(wb, wsPct, "Percentage");
+
+      // Save
+      XLSX.writeFile(wb, `${question.replace(/\s+/g, "_")}with_topbreak.xlsx`);
+    } catch (err) {
+      console.error("❌ Export error:", err);
+    }
+  }
+
+  function exportMergedTopbreakGridToExcel(divId, matrixObj = {}, question = "Report") {
+    try {
+      if (!matrixObj || !matrixObj.rows) {
+        console.warn("⚠️ Invalid data format");
+        return;
+      }
+
+      const { columns = [], rows = [] } = matrixObj;
+
+      // --- Helper to build sheet data ---
+      const buildSheetData = (mode) => {
+        const exportData = [];
+        const percentCells = {}; // for real % formatting
+        let currentRow = 0;
+
+        exportData.push([question]);
+        currentRow++;
+        exportData.push([]); // blank row
+        currentRow++;
+
+        // Header
+        const header = ["Label", ...columns.map((c) => `${c.label} (${c.letter})`)];
+        exportData.push(header);
+        currentRow++;
+
+        // Data rows
+        rows.forEach((row) => {
+          const rowData = [row.label];
+
+          row.cells.forEach((cell, colIdx) => {
+            if (mode === "count") {
+              // Include sig if available
+              const val = cell.sig ? `${cell.count}${cell.sig}` : cell.count ?? "";
+              rowData.push(val);
+            } else if (mode === "pct") {
+              let pctVal = "";
+
+              // ✅ If base row, use count instead of %
+              if (row.label.toLowerCase() === "base") {
+                pctVal = cell.count ?? "";
+              } else if (cell.pct) {
+                // convert string % → numeric fraction
+                pctVal = parseFloat(cell.pct.replace("%", "")) / 100;
+                const cellRef = XLSX.utils.encode_cell({ r: currentRow, c: colIdx + 1 });
+                percentCells[cellRef] = true;
+              }
+
+              rowData.push(pctVal);
+            }
+          });
+
+          exportData.push(rowData);
+          currentRow++;
+        });
+
+        return { exportData, percentCells };
+      };
+
+      const { exportData: countData } = buildSheetData("count");
+      const { exportData: pctData, percentCells } = buildSheetData("pct");
+
+      // --- Helper to style sheet ---
+      const makeSheet = (data, mode, percentCells) => {
+        const ws = XLSX.utils.aoa_to_sheet(data);
+
+        // Styles
+        const titleStyle = {
+          font: { bold: true, sz: 14, color: { rgb: "1E4D2B" } },
+          alignment: { horizontal: "left", vertical: "center" },
+        };
+        const headerStyle = {
+          font: { bold: true },
+          fill: { fgColor: { rgb: "D9E1F2" } },
+          alignment: { horizontal: "center" },
+        };
+        const baseStyle = {
+          font: { bold: true },
+          fill: { fgColor: { rgb: "E7E6E6" } },
+          alignment: { horizontal: "left" },
+        };
+        const totalStyle = { font: { bold: true } };
+
+        const range = XLSX.utils.decode_range(ws["!ref"]);
+
+        for (let R = range.s.r; R <= range.e.r; R++) {
+          for (let C = range.s.c; C <= range.e.c; C++) {
+            const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
+            if (!ws[cellRef]) continue;
+            const val = (ws[cellRef].v || "").toString().toLowerCase();
+
+            // Apply styles
+            if (R === 0) ws[cellRef].s = titleStyle;
+            if (R === 2) ws[cellRef].s = headerStyle;
+            if (val === "base") ws[cellRef].s = baseStyle;
+            if (val.includes("total (")) ws[cellRef].s = headerStyle;
+
+            // ✅ Apply percentage format
+            if (mode === "pct" && percentCells[cellRef]) {
+              ws[cellRef].z = "0.0%"; // shows 1 → 100.0%
+            }
+          }
+        }
+
+        // Column widths
+        ws["!cols"] = [{ wch: 25 }, ...columns.map(() => ({ wch: 15 }))];
+
+        return ws;
+      };
+
+      const wsCount = makeSheet(countData, "count");
+      const wsPct = makeSheet(pctData, "pct", percentCells);
+
+      // --- Create Workbook
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, wsCount, "Count");
+      XLSX.utils.book_append_sheet(wb, wsPct, "Percentage");
+
+      // --- Save file
+      XLSX.writeFile(wb, `${question.replace(/\s+/g, "_")}with_topbreak.xlsx`);
+    } catch (err) {
+      console.error("❌ Export error:", err);
+    }
+  }
+
+
+  function exportNumericGridToExcel(divId, numericData = {}, question = "Numeric Grid") {
+    try {
+      const matrix = numericData;
+      if (!matrix || !matrix.subtables || matrix.subtables.length === 0) {
+        console.warn("⚠️ No valid numeric grid data found");
+        return;
+      }
+
+      const { columns = [], subtables = [] } = matrix;
+      const exportData = [];
+      let currentRow = 0;
+
+      // 🟩 Loop each subtable
+      subtables.forEach((sub, subIdx) => {
+        const title = sub.title?.trim() || `Subtable ${subIdx + 1}`;
+
+        // Section title
+        exportData.push([`${question}: ${title}`]);
+        currentRow++;
+        exportData.push([]);
+        currentRow++;
+
+        // Header row
+        const header = ["Label", ...columns.map((c) => `${c.label} (${c.letter})`)];
+        exportData.push(header);
+        currentRow++;
+
+        // Rows
+        sub.rows.forEach((row) => {
+          const rowData = [row.label];
+
+          row.values.forEach((val, idx) => {
+            if (typeof val === "object" && val.count !== undefined) {
+              // Base row
+              rowData.push(val.count);
+            } else {
+              // Mean / Std Dev rows
+              const sig = row.sig?.[idx] ? row.sig[idx] : "";
+              const displayValue = sig && sig.trim() !== "" ? `${val}${sig}` : val ?? "";
+              rowData.push(displayValue);
+            }
+          });
+
+          exportData.push(rowData);
+          currentRow++;
+        });
+
+        // Blank rows between tables
+        exportData.push([]);
+        exportData.push([]);
+        currentRow += 2;
+      });
+
+      // 🟩 Create worksheet
+      const ws = XLSX.utils.aoa_to_sheet(exportData);
+
+      // 🟩 Styling
+      const titleStyle = {
+        font: { bold: true, sz: 14, color: { rgb: "1E4D2B" } },
+        alignment: { horizontal: "left", vertical: "center" },
+      };
+      const headerStyle = {
+        font: { bold: true },
+        fill: { fgColor: { rgb: "D9E1F2" } },
+        alignment: { horizontal: "center" },
+      };
+      const baseStyle = {
+        font: { bold: true },
+        fill: { fgColor: { rgb: "E7E6E6" } },
+        alignment: { horizontal: "left" },
+      };
+      const meanStyle = {
+        font: { color: { rgb: "000080" }, italic: true },
+      };
+      const stdDevStyle = {
+        font: { color: { rgb: "555555" } },
+      };
+
+      // 🟩 Apply styles row by row
+      const range = XLSX.utils.decode_range(ws["!ref"]);
+
+      for (let R = range.s.r; R <= range.e.r; R++) {
+        for (let C = range.s.c; C <= range.e.c; C++) {
+          const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
+          if (!ws[cellRef]) continue;
+          const val = (ws[cellRef].v || "").toString().toLowerCase();
+
+          // Apply per-row styles
+          if (val.startsWith(question.toLowerCase())) ws[cellRef].s = titleStyle;
+          else if (val === "label") ws[cellRef].s = headerStyle;
+          else if (val === "base") ws[cellRef].s = baseStyle;
+          else if (val === "mean") ws[cellRef].s = meanStyle;
+          else if (val.includes("std dev")) ws[cellRef].s = stdDevStyle;
+        }
+      }
+
+      // 🟩 Adjust column width
+      ws["!cols"] = [{ wch: 25 }, ...columns.map(() => ({ wch: 20 }))];
+
+      // 🟩 Workbook
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Numeric Grid");
+
+      XLSX.writeFile(wb, `${question.replace(/\s+/g, "_")}_Combined_NumericGrid.xlsx`);
+    } catch (err) {
+      console.error("❌ Export error:", err);
+    }
+  }
+
+
+
+
 
   // -------- Sorting helpers ----------
   const handleSort = (tableKey, colIndex) => {
@@ -427,7 +1061,8 @@ function CrosstabPage() {
         {/* Header: question + export button */}
         <div className="flex justify-between items-center mb-3">
           <div className="text-green-700 font-semibold">{question}</div>
-          <button className="text-sm text-blue-600 hover:underline">
+          <button className="text-sm text-blue-600 hover:underline"
+            onClick={() => exportNumericGridToExcel(groupIdx, matrixObj, question)}>
             Export
           </button>
         </div>
@@ -482,7 +1117,8 @@ function CrosstabPage() {
         id={groupIdx} className="bg-white border rounded-lg shadow p-4 mb-6">
         <div className="flex justify-between items-center mb-3">
           <div className="text-green-700 font-semibold">{question}</div>
-          <button className="text-sm text-blue-600 hover:underline">Export</button>
+          <button className="text-sm text-blue-600 hover:underline"
+            onClick={() => exportNumericGridToExcel(groupIdx, matrixObj, question)}>Export</button>
         </div>
 
         {subtables.map((table, idx) => (
@@ -579,7 +1215,8 @@ function CrosstabPage() {
         {/* Header */}
         <div className="flex justify-between items-center mb-4">
           <div className="text-green-700 font-semibold">{question}</div>
-          <button className="text-sm text-blue-600 hover:underline">Export</button>
+          <button className="text-sm text-blue-600 hover:underline"
+            onClick={() => exportToExcel(groupIdx, matrixObj, question)}>Export</button>
         </div>
 
         {/* Score + status */}
@@ -679,7 +1316,6 @@ function CrosstabPage() {
   const renderMatrixCard = (matrixObj, groupIdx, tableKeyBase, question) => {
 
     if (!matrixObj) return null;
-
     // 🔹 Case 1: SRG → array of topbreaks
     if (Array.isArray(matrixObj)) {
       return (
@@ -689,7 +1325,8 @@ function CrosstabPage() {
         >
           <div className="flex justify-between items-center mb-3">
             <div className="text-green-700 font-semibold">{question}</div>
-            <button className="text-sm text-blue-600 hover:underline">Export</button>
+            <button className="text-sm text-blue-600 hover:underline"
+              onClick={() => exportMultiTopbreakToExcel(groupIdx, matrixObj, question)}>Export</button>
           </div>
 
           {matrixObj.map((sub, si) => {
@@ -771,7 +1408,6 @@ function CrosstabPage() {
     );
 
     const rows = getSortedRows(matrixObj, tableKey);
-    console.log(rows);
 
     return (
       <div
@@ -780,7 +1416,8 @@ function CrosstabPage() {
       >
         <div className="flex justify-between items-center mb-3">
           <div className="text-green-700 font-semibold">{question}</div>
-          <button className="text-sm text-blue-600 hover:underline">Export</button>
+          <button className="text-sm text-blue-600 hover:underline"
+            onClick={() => exportMergedTopbreakGridToExcel(groupIdx, matrixObj, question)}>Export</button>
         </div>
 
         <div className="overflow-x-auto">
@@ -832,9 +1469,9 @@ function CrosstabPage() {
   const renderQuickCrosstabCard = (qcObj, groupIdx, tableKeyBase, question, type) => {
     if (!qcObj) return null;
 
+    const matrix = qcObj.Matrix;
     // 🔹 Case 1: SRG in Quick Crosstab
     if (type === "SRG" || type === "MRG" && qcObj.Matrix) {
-      const matrix = qcObj.Matrix;
       const cols = (matrix.columns || []).map((c) =>
         typeof c === "string" ? { label: c, letter: "" } : c
       );
@@ -846,7 +1483,8 @@ function CrosstabPage() {
         >
           <div className="flex justify-between items-center mb-3">
             <div className="text-green-700 font-semibold">{question}</div>
-            <button className="text-sm text-blue-600 hover:underline">Export</button>
+            <button className="text-sm text-blue-600 hover:underline"
+              onClick={() => exportCrosstabToExcel(groupIdx, matrix, question)}>Export</button>
           </div>
 
           <div className="overflow-x-auto">
@@ -902,7 +1540,8 @@ function CrosstabPage() {
         >
           <div className="flex justify-between items-center mb-3">
             <div className="text-green-700 font-semibold">{question}</div>
-            <button className="text-sm text-blue-600 hover:underline">Export</button>
+            <button className="text-sm text-blue-600 hover:underline"
+              onClick={() => exportToExcel(groupIdx, rows, question)}>Export</button>
           </div>
 
           <div className="overflow-x-auto">
@@ -1094,7 +1733,7 @@ function CrosstabPage() {
 
   // Sidebar Component
   const Sidebar = ({ groups, activeIndex }) => {
-    const [searchTerm, setSearchTerm] = useState("");   // ⬅️ keep search local
+    const [searchTerm, setSearchTerm] = useState("");
 
     return (
       <div className="fixed top-0 left-0 h-full w-64 bg-gray-100 border-r shadow-lg z-40 flex flex-col">
@@ -1103,7 +1742,7 @@ function CrosstabPage() {
           <h2 className="font-bold text-gray-700">Questions</h2>
         </div>
 
-        {/* Search */}
+        {/* Search box */}
         <div className="p-3 border-b">
           <input
             type="text"
@@ -1122,13 +1761,30 @@ function CrosstabPage() {
             )
             .map((g, idx) => (
               <div
+                id={`sidebar-item-${idx}`}
                 key={idx}
-                className={`px-3 py-2 cursor-pointer rounded text-sm ${activeIndex === idx ? "bg-blue-200 font-bold" : "hover:bg-blue-100"
+                className={`px-3 py-2 cursor-pointer rounded text-sm ${activeIndex === idx
+                  ? "bg-blue-200 font-bold"
+                  : "hover:bg-blue-100"
                   }`}
                 onClick={() => {
+                  const el = document.getElementById(`matrix_${idx}`);
+                  if (el) {
+                    const top = el.offsetTop;
+
+                    // ✅ Auto switch between smooth and jump
+                    const behavior = groups.length > 100 ? "auto" : "auto";
+
+                    window.scrollTo({
+                      top,
+                      behavior,
+                    });
+                  }
+
+                  // ✅ Ensure sidebar item stays visible
                   document
-                    .getElementById(`matrix_${idx}`)
-                    ?.scrollIntoView({ behavior: "smooth" });
+                    .getElementById(`sidebar-item-${idx}`)
+                    ?.scrollIntoView({ block: "nearest", behavior: "auto" });
                 }}
               >
                 {g.question}
@@ -1138,7 +1794,6 @@ function CrosstabPage() {
       </div>
     );
   };
-
   // -------- Page render ----------
   return (
     <><Sidebar groups={groups} activeIndex={activeIndex} />
@@ -1250,7 +1905,6 @@ function CrosstabPage() {
         )}
 
         {error && <div className="text-red-500 mb-4">{error}</div>}
-
         <div className="space-y-8">
           {groups.map((grp, gIdx) => {
             const payload = grp.data || {};

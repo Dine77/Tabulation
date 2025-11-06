@@ -89,7 +89,8 @@ def generate_meta(request, project_id):
                 "Question_Type": "",
                 "Var_Grp": "",
                 "Base_Title": "",
-                "Add_Question_Type": ""
+                "Add_Question_Type": "",
+                "Sortorder": ""
             })
         df_meta = pd.DataFrame(rows)
 
@@ -143,7 +144,8 @@ def generate_meta(request, project_id):
                 "Question_Type": "",
                 "Var_Grp": "",
                 "Base_Title": "",
-                "Add_Question_Type": ""
+                "Add_Question_Type": "",
+                "Sortorder": "",
             })
             df_meta = pd.DataFrame(rows)
 
@@ -179,48 +181,6 @@ def generate_meta(request, project_id):
     )
 
     return Response({"meta_file": relative_path, "message": "Meta file generated"})
-
-# @api_view(["POST"])
-# @parser_classes([MultiPartParser, FormParser])
-# def upload_project(request):
-#     project_name = request.data.get("project_name")
-#     file = request.FILES.get("file")
-#     if not project_name or not file:
-#         return Response({"error": "Project name and file required"}, status=400)
-
-#     # Create folder
-#     project_folder = os.path.join(settings.MEDIA_ROOT, project_name)
-#     os.makedirs(project_folder, exist_ok=True)
-
-#     # Save file
-#     file_path = os.path.join(project_folder, file.name)
-#     with open(file_path, "wb+") as dest:
-#         for chunk in file.chunks():
-#             dest.write(chunk)
-
-#     relative_path = os.path.relpath(file_path, settings.MEDIA_ROOT).replace("\\", "/")
-
-#     # Find project by name or create new
-#     project = Project.objects(project_name=project_name).first()
-#     if not project:
-#         project = Project(project_name=project_name, files=[], created_at=datetime.utcnow())
-
-#     if relative_path not in project.files:  # avoid duplicate file entries
-#         project.files.append(relative_path)
-
-#     project.save()
-
-#         # Log activity
-#     log_activity(
-#         user=request.user.username if request.user.is_authenticated else "guest",
-#         action="upload Project file",
-#         project_name=project_name,
-#         file_name=file.name
-#     )
-
-#     serializer = ProjectSerializer(project)
-#     return Response(serializer.data, status=status.HTTP_201_CREATED)
-
 
 @api_view(["DELETE"])
 def delete_file(request, project_id, file_name):
@@ -311,7 +271,6 @@ def upload_meta(request, project_id):
 def upload_project(request):
     project_name = request.data.get("project_name")
     file = request.FILES.get("file")
-    print(project_name)
 
     if not project_name or not file:
         return Response({"error": "Project name and file required"}, status=400)
@@ -441,6 +400,7 @@ def quick_crosstab(request, project_id):
         var_name = str(row["Var_Name"]).strip()
         table_title = str(row["Table_Title"])
         add_type = str(row.get("Add_Question_Type", "")).strip().upper()
+        sortorder =row.get("Sortorder", "")
 
         if var_name in df.columns:
             if add_type == "NPS":
@@ -456,7 +416,8 @@ def quick_crosstab(request, project_id):
                 "var_name": var_name,
                 "type": qtype,
                 "data": table_data,
-                "add_type": add_type
+                "add_type": add_type,
+                "sortorder":sortorder
             })
 
 
@@ -466,11 +427,13 @@ def quick_crosstab(request, project_id):
         group_rows = meta_df[meta_df["Var_Grp"] == grp]
         table_title = group_rows.iloc[0]["Table_Title"]
         table_data = crosstab_multi_response(df, grp, group_rows, value_label_dict)
+        sortorder =group_rows.iloc[0]["Sortorder"]
         output.append({
             "question": table_title,
             "var_group": grp,
             "type": "MR",
-            "data": table_data
+            "data": table_data,
+            "sortorder":sortorder
         })
 
     # --- Numeric (NR) ---
@@ -478,13 +441,15 @@ def quick_crosstab(request, project_id):
     for _, row in nr_rows.iterrows():
         var_name = str(row["Var_Name"]).strip()
         table_title = str(row["Table_Title"])
+        sortorder =row["Sortorder"]
         if var_name in df.columns:
             table_data = crosstab_numeric(df, var_name)
             output.append({
                 "question": table_title,
                 "var_name": var_name,
                 "type": "NR",
-                "data": table_data
+                "data": table_data,
+            "sortorder":sortorder
             })
 
     # --- Open Ended (OE) ---
@@ -507,11 +472,13 @@ def quick_crosstab(request, project_id):
         group_rows = meta_df[meta_df["Var_Grp"] == grp]
         table_title = group_rows.iloc[0]["Table_Title"]
         table_data = crosstab_single_response_grid(df, grp, group_rows, value_label_dict)
+        sortorder =group_rows.iloc[0]["Sortorder"]
         output.append({
             "question": table_title,
             "var_group": grp,
             "type": "SRG",
-            "data": table_data
+            "data": table_data,
+            "sortorder":sortorder
         })
 
         # --- Multi Response Grid (MRG) ---
@@ -520,11 +487,13 @@ def quick_crosstab(request, project_id):
         group_rows = meta_df[meta_df["Var_Grp"] == grp]
         table_title = group_rows.iloc[0]["Table_Title"]
         table_data = crosstab_multi_response_grid(df, grp, group_rows, value_label_dict)
+        sortorder =group_rows.iloc[0]["Sortorder"]
         output.append({
             "question": table_title,
             "var_group": grp,
             "type": "MRG",
-            "data": table_data
+            "data": table_data,
+            "sortorder":sortorder
         })
 
     # --- Numeric Grid (NG) ---
@@ -533,13 +502,15 @@ def quick_crosstab(request, project_id):
         group_rows = meta_df[meta_df["Var_Grp"] == grp]
         table_title = group_rows.iloc[0]["Table_Title"]
         table_data = build_numeric_grid(df, grp, group_rows["Var_Name"], meta_df)
+        sortorder =group_rows.iloc[0]["Sortorder"]
         output.append({
             "question": table_title,
             "var_group": grp,
             "type": "NRG",
             "data": {
                 "matrix": [table_data]
-            }
+            },
+            "sortorder":sortorder
         })
     
 
@@ -557,7 +528,8 @@ def quick_crosstab(request, project_id):
         table_title = meta_df.loc[meta_df["Var_Name"] == var, "Table_Title"].iloc[0]
 
         # ✅ Pass both var and title
-        table_data = build_wordcloud_data(df, var, table_title)
+        sortorder =meta_df.loc[meta_df["Var_Name"] == var, "Sortorder"].iloc[0]
+        table_data = build_wordcloud_data(df, var, table_title,sortorder)
 
         output.append(table_data)
 
@@ -637,6 +609,7 @@ def new_crosstab(request, project_id):
     for _, row in sc_rows.iterrows():
         var_name = str(row["Var_Name"]).strip()
         table_title = str(row["Table_Title"])
+        sortorder = row["Sortorder"]
         value_labels =value_label_dict.get(var_name, {})
 
         if topbreak_title:
@@ -650,7 +623,8 @@ def new_crosstab(request, project_id):
             "var_name": var_name,
             "type": "SC",
             "data": table_data,
-            "crosstab_type":"new"
+            "crosstab_type":"new",
+            "sortorder":sortorder
         })
 
     # --- Multi Response ---
@@ -658,6 +632,7 @@ def new_crosstab(request, project_id):
     for grp in mr_groups:
         group_rows = meta_df[meta_df["Var_Grp"] == grp]
         table_title = group_rows.iloc[0]["Table_Title"]
+        sortorder = group_rows.iloc[0]["Sortorder"]
 
         if topbreak_title:
             table_data = crosstab_multi_response_with_topbreak(
@@ -671,7 +646,8 @@ def new_crosstab(request, project_id):
             "var_group": grp,
             "type": "MR",
             "data": table_data,
-            "crosstab_type":"new"
+            "crosstab_type":"new",
+            "sortorder":sortorder
         })
 
     # --- Numeric ---
@@ -679,6 +655,7 @@ def new_crosstab(request, project_id):
     for _, row in nr_rows.iterrows():
         var_name = str(row["Var_Name"]).strip()
         table_title = str(row["Table_Title"])
+        sortorder = row["Sortorder"]
 
         if topbreak_title:
             table_data = crosstab_numeric_with_topbreak(df, var_name, topbreak_title, value_label_dict, meta_df,sig_level=sig_level)
@@ -690,7 +667,8 @@ def new_crosstab(request, project_id):
             "var_name": var_name,
             "type": "NR",
             "data": table_data,
-            "crosstab_type":"new"
+            "crosstab_type":"new",
+            "sortorder":sortorder
         })
 
     # --- Open Ended ---
@@ -716,6 +694,7 @@ def new_crosstab(request, project_id):
     for grp in srg_groups:
         group_rows = meta_df[meta_df["Var_Grp"] == grp]
         table_title = group_rows.iloc[0]["Table_Title"]
+        sortorder = group_rows.iloc[0]["Sortorder"]
 
         if topbreak_title:
             table_data = crosstab_single_response_grid_with_topbreak(
@@ -729,7 +708,8 @@ def new_crosstab(request, project_id):
             "var_group": grp,
             "type": "SRG",
             "data": table_data,
-            "crosstab_type":"new"
+            "crosstab_type":"new",
+            "sortorder":sortorder
         })
 
     # --- Multi Response Grid ---
@@ -737,6 +717,7 @@ def new_crosstab(request, project_id):
     for grp in mrg_groups:
         group_rows = meta_df[meta_df["Var_Grp"] == grp]
         table_title = group_rows.iloc[0]["Table_Title"]
+        sortorder = group_rows.iloc[0]["Sortorder"]
 
         if topbreak_title:
             table_data = crosstab_multi_response_grid_with_topbreak(
@@ -752,7 +733,8 @@ def new_crosstab(request, project_id):
             "var_group": grp,
             "type": "MRG",
             "data": table_data,
-            "crosstab_type": "new"
+            "crosstab_type": "new",
+            "sortorder":sortorder
         })    
 
 
@@ -762,7 +744,7 @@ def new_crosstab(request, project_id):
     for grp in ngtb_groups:
         group_rows = meta_df[meta_df["Var_Grp"] == grp]["Var_Name"]
         table_title = meta_df.loc[meta_df["Var_Grp"] == grp, "Table_Title"].iloc[0]
-
+        sortorder = meta_df.loc[meta_df["Var_Grp"] == grp, "Sortorder"].iloc[0]
         table_data = build_numeric_grid_topbreak(
             df,
             grp,
@@ -780,7 +762,8 @@ def new_crosstab(request, project_id):
             "data": {
                 "matrix": table_data
             },
-            "crosstab_type": "new"
+            "crosstab_type": "new",
+            "sortorder":sortorder
         })
     
 

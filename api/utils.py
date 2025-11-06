@@ -1839,7 +1839,7 @@ def build_numeric_grid_topbreak(
     }
 
 
-def build_wordcloud_data(df, var_name, table_title, min_length=3, max_words=100):
+def build_wordcloud_data(df, var_name, table_title,sortorder, min_length=3, max_words=100):
     import re
     from collections import Counter
     import nltk
@@ -1870,6 +1870,7 @@ def build_wordcloud_data(df, var_name, table_title, min_length=3, max_words=100)
         "question": table_title,
         "var_name": var_name,
         "type": "WordCloud",
-        "data": wordcloud_data
+        "data": wordcloud_data,
+        "sortorder":sortorder
     }
 
